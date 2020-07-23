@@ -1,5 +1,5 @@
 include ../include/generated/variables.mak
-include $(SOC_DIRECTORY)/software/common.mak
+include ../common.mak
 
 OBJECTS = sdram.o
 
@@ -19,4 +19,4 @@ liblitedram.a: $(OBJECTS)
 .PHONY: all clean
 
 clean:
-	$(RM) $(OBJECTS) liblitedram.a .*~ *~
+	$(RM) $(OBJECTS) liblitedram.a

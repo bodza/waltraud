@@ -6,11 +6,9 @@ from migen import ClockDomain, FullMemoryWE, If, Instance, log2_int, Module, Sig
 
 from migen.genlib.resetsync import AsyncResetSynchronizer
 
-from litex import get_data_mod
 from litex.build.dfu import DFUProg
 from litex.build.generic_platform import ConstraintError, IOStandard, Misc, Pins, Subsignal
 from litex.build.lattice import LatticePlatform
-from litex.build.tools import write_to_file
 
 from litex.soc.cores.clock import ECP5PLL
 from litex.soc.cores.cpu import CPUS
@@ -1025,42 +1023,26 @@ class Waltraud(SoC):
             if region.linker:
                 region.type += "+linker"
 
-soc_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
-
 def _makefile_escape(s):
     return s.replace("\\", "\\\\")
 
 class Builder:
-    def __init__(self, soc,
-        output_dir       = None,
-        gateware_dir     = None,
-        software_dir     = None,
-        include_dir      = None,
-        generated_dir    = None,
-        compile_gateware = True,
-        csr_json         = None,
-        bios_options     = None):
+    def __init__(self, soc, output_dir=None, compile_gateware=True):
         self.soc = soc
 
-        # From Python doc: makedirs() will become confused if the path elements to create include '..'
-        self.output_dir    = os.path.abspath(output_dir    or os.path.join("build", soc.platform.name))
-        self.gateware_dir  = os.path.abspath(gateware_dir  or os.path.join(self.output_dir,   "gateware"))
-        self.software_dir  = os.path.abspath(software_dir  or os.path.join(self.output_dir,   "software"))
-        self.include_dir   = os.path.abspath(include_dir   or os.path.join(self.software_dir, "include"))
-        self.generated_dir = os.path.abspath(generated_dir or os.path.join(self.include_dir,  "generated"))
+        self.output_dir = os.path.abspath(output_dir or os.path.join("build", soc.platform.name))
+
+        self.gateware_dir  = os.path.abspath(os.path.join(self.output_dir,   "gateware"))
+        self.software_dir  = os.path.abspath(os.path.join(self.output_dir,   "software"))
+        self.include_dir   = os.path.abspath(os.path.join(self.software_dir, "include"))
+        self.generated_dir = os.path.abspath(os.path.join(self.include_dir,  "generated"))
 
         self.compile_gateware = compile_gateware
-        self.csr_json = csr_json
-        self.bios_options = bios_options
 
         self.software_packages = []
         for name in [ "libcompiler_rt", "libbase", "liblitedram", "bios" ]:
-            self.add_software_package(name)
-
-    def add_software_package(self, name, src_dir=None):
-        if src_dir is None:
-            src_dir = os.path.join(soc_directory, "software", name)
-        self.software_packages.append((name, src_dir))
+            src_dir = os.path.abspath(os.path.join("software", name))
+            self.software_packages.append((name, src_dir))
 
     def _generate_includes(self):
         os.makedirs(self.include_dir, exist_ok=True)
@@ -1072,34 +1054,29 @@ class Builder:
 
         for k, v in export.get_cpu_mak(self.soc.cpu, True):
             define(k, v)
-        define("COMPILER_RT_DIRECTORY", get_data_mod("software", "compiler_rt").data_location)
-        define("SOC_DIRECTORY", soc_directory)
         variables_contents.append("export BUILDINC_DIRECTORY\n")
         define("BUILDINC_DIRECTORY", self.include_dir)
         for name, src_dir in self.software_packages:
             define(name.upper() + "_DIRECTORY", src_dir)
 
-        if self.bios_options is not None:
-            for option in self.bios_options:
-                define(option, "1")
+        def _write_file(filename, contents):
+            old_contents = None
+            if os.path.exists(filename):
+                with open(filename, "r") as f:
+                    old_contents = f.read()
+            if old_contents != contents:
+                with open(filename, "w") as f:
+                    f.write(contents)
 
-        write_to_file(os.path.join(self.generated_dir, "variables.mak"), "".join(variables_contents))
-        write_to_file(os.path.join(self.generated_dir, "output_format.ld"), export.get_linker_output_format(self.soc.cpu))
-        write_to_file(os.path.join(self.generated_dir, "regions.ld"), export.get_linker_regions(self.soc.bus.regions))
+        _write_file(os.path.join(self.generated_dir, "variables.mak"), "".join(variables_contents))
+        _write_file(os.path.join(self.generated_dir, "output_format.ld"), export.get_linker_output_format(self.soc.cpu))
+        _write_file(os.path.join(self.generated_dir, "regions.ld"), export.get_linker_regions(self.soc.bus.regions))
 
-        write_to_file(os.path.join(self.generated_dir, "mem.h"), export.get_mem_header(self.soc.bus.regions))
-        write_to_file(os.path.join(self.generated_dir, "soc.h"), export.get_soc_header(self.soc.constants))
-        write_to_file(os.path.join(self.generated_dir, "csr.h"), export.get_csr_header(regions=self.soc.csr.regions, constants=self.soc.constants, csr_base=self.soc.bus.regions['csr'].origin))
-        write_to_file(os.path.join(self.generated_dir, "git.h"), export.get_git_header())
+        _write_file(os.path.join(self.generated_dir, "mem.h"), export.get_mem_header(self.soc.bus.regions))
+        _write_file(os.path.join(self.generated_dir, "soc.h"), export.get_soc_header(self.soc.constants))
+        _write_file(os.path.join(self.generated_dir, "csr.h"), export.get_csr_header(regions=self.soc.csr.regions, constants=self.soc.constants, csr_base=self.soc.bus.regions['csr'].origin))
 
-        if hasattr(self.soc, "sdram"):
-            write_to_file(os.path.join(self.generated_dir, "sdram_phy.h"), get_sdram_phy_c_header(self.soc.sdram.controller.settings.phy, self.soc.sdram.controller.settings.timing))
-
-    def _generate_csr_map(self):
-        if self.csr_json is not None:
-            csr_dir = os.path.dirname(os.path.realpath(self.csr_json))
-            os.makedirs(csr_dir, exist_ok=True)
-            write_to_file(self.csr_json, export.get_csr_json(self.soc.csr.regions, self.soc.constants, self.soc.bus.regions))
+        _write_file(os.path.join(self.generated_dir, "sdram_phy.h"), get_sdram_phy_c_header(self.soc.sdram.controller.settings.phy, self.soc.sdram.controller.settings.timing))
 
     def _prepare_rom_software(self):
         for name, src_dir in self.software_packages:
@@ -1110,7 +1087,7 @@ class Builder:
          for name, src_dir in self.software_packages:
             dst_dir = os.path.join(self.software_dir, name)
             makefile = os.path.join(src_dir, "Makefile")
-            subprocess.check_call(["make", "-C", dst_dir, "-f", makefile])
+            subprocess.check_call(["make", "-C", dst_dir, "-I", src_dir, "-f", makefile])
 
     def _initialize_rom_software(self):
         bios_file = os.path.join(self.software_dir, "bios", "bios.bin")
@@ -1125,7 +1102,6 @@ class Builder:
         self.soc.finalize()
 
         self._generate_includes()
-        self._generate_csr_map()
 
         self._prepare_rom_software()
         self._generate_rom_software()
@@ -1145,7 +1121,7 @@ def main():
 
     soc = Waltraud()
 
-    Builder(soc, output_dir="build", csr_json="build/csr.json", bios_options=[]).build(build_name="waltraud", run=args.build)
+    Builder(soc, output_dir="build").build(build_name="waltraud", run=args.build)
 
     if args.load:
         DFUProg(vid="1209", pid="5af0").load_bitstream("build/gateware/waltraud.bit")

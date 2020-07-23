@@ -14,7 +14,6 @@
 #include <generated/csr.h>
 #include <generated/soc.h>
 #include <generated/mem.h>
-#include <generated/git.h>
 
 #include <liblitedram/sdram.h>
 

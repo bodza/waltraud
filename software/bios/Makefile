@@ -1,5 +1,5 @@
 include ../include/generated/variables.mak
-include $(SOC_DIRECTORY)/software/common.mak
+include ../common.mak
 
 OBJECTS = isr.o main.o
 
