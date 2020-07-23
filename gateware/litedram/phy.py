@@ -3,7 +3,7 @@ import math
 from migen import *
 from migen.fhdl.specials import Tristate
 from migen.genlib.cdc import MultiReg
-from migen.genlib.misc import timeline, WaitTimer
+from migen.genlib.misc import timeline
 from migen.genlib.record import *
 
 from litex.soc.interconnect.csr import *
@@ -77,23 +77,6 @@ class Interconnect(Module):
     def __init__(self, master, slave):
         self.comb += master.connect(slave)
 
-class DDR4DFIMux(Module):
-    def __init__(self, dfi_i, dfi_o):
-        for i in range(len(dfi_i.phases)):
-            p_i = dfi_i.phases[i]
-            p_o = dfi_o.phases[i]
-            self.comb += [
-                p_i.connect(p_o),
-                If(~p_i.ras_n & p_i.cas_n & p_i.we_n,
-                   p_o.act_n.eq(0),
-                   p_o.we_n.eq(p_i.address[14]),
-                   p_o.cas_n.eq(p_i.address[15]),
-                   p_o.ras_n.eq(p_i.address[16])
-                ).Else(
-                    p_o.act_n.eq(1),
-                )
-            ]
-
 # 1:2 frequency-ratio DDR3 PHY for Lattice's ECP5
 # DDR3: 800 MT/s
 
@@ -111,7 +94,7 @@ class ECP5DDRPHYInit(Module):
         pause    = Signal()
         reset    = Signal()
 
-        # DDRDLLA instance -------------------------------------------------------------------------
+        # DDRDLLA instance
         _lock = Signal()
         delay = Signal()
         self.specials += Instance("DDRDLLA",
@@ -128,7 +111,7 @@ class ECP5DDRPHYInit(Module):
         self.sync.init += lock_d.eq(lock)
         self.comb += new_lock.eq(lock & ~lock_d)
 
-        # DDRDLLA/DDQBUFM/ECLK initialization sequence ---------------------------------------------
+        # DDRDLLA/DDQBUFM/ECLK initialization sequence
         t = 8 # in cycles
         self.sync.init += [
             # Wait DDRDLLA Lock
@@ -146,7 +129,6 @@ class ECP5DDRPHYInit(Module):
             ])
         ]
 
-        # ------------------------------------------------------------------------------------------
         self.comb += [
             self.pause.eq(pause),
             self.stop.eq(stop),
@@ -166,15 +148,15 @@ class ECP5DDRPHY(Module, AutoCSR):
         nphases     = 2
         assert databits%8 == 0
 
-        # Init -------------------------------------------------------------------------------------
+        # Init
         self.submodules.init = ECP5DDRPHYInit()
 
-        # Parameters -------------------------------------------------------------------------------
+        # Parameters
         cl, cwl         = get_cl_cw(memtype, tck)
         cl_sys_latency  = get_sys_latency(nphases, cl)
         cwl_sys_latency = get_sys_latency(nphases, cwl)
 
-        # Registers --------------------------------------------------------------------------------
+        # Registers
         self._dly_sel = CSRStorage(databits//8)
 
         self._rdly_dq_rst         = CSR()
@@ -188,7 +170,7 @@ class ECP5DDRPHY(Module, AutoCSR):
         # Observation
         self.datavalid = Signal(databits//8)
 
-        # PHY settings -----------------------------------------------------------------------------
+        # PHY settings
         rdcmdphase, rdphase = get_sys_phases(nphases, cl_sys_latency, cl)
         wrcmdphase, wrphase = get_sys_phases(nphases, cwl_sys_latency, cwl)
         self.settings = PhySettings(
@@ -208,16 +190,16 @@ class ECP5DDRPHY(Module, AutoCSR):
             write_latency = cwl_sys_latency
         )
 
-        # DFI Interface ----------------------------------------------------------------------------
+        # DFI Interface
         self.dfi = dfi = DFIInterface(addressbits, bankbits, nranks, 4*databits, 4)
 
         bl8_chunk = Signal()
 
-        # Iterate on pads groups -------------------------------------------------------------------
+        # Iterate on pads groups
         for pads_group in range(len(pads.groups)):
             pads.sel_group(pads_group)
 
-            # Clock --------------------------------------------------------------------------------
+            # Clock
             for i in range(len(pads.clk_p)):
                 sd_clk_se = Signal()
                 self.specials += Instance("ODDRX2F",
@@ -231,7 +213,7 @@ class ECP5DDRPHY(Module, AutoCSR):
                     o_Q    = pads.clk_p[i]
                 )
 
-            # Addresses and Commands ---------------------------------------------------------------
+            # Addresses and Commands
             for i in range(addressbits):
                 self.specials += Instance("ODDRX2F",
                     i_RST  = ResetSignal("sys"),
@@ -272,7 +254,7 @@ class ECP5DDRPHY(Module, AutoCSR):
                         o_Q    = getattr(pads, name)[i]
                     )
 
-        # DQ ---------------------------------------------------------------------------------------
+        # DQ
         dq_oe         = Signal()
         dqs_re        = Signal()
         dqs_oe        = Signal()
@@ -341,7 +323,7 @@ class ECP5DDRPHY(Module, AutoCSR):
                 If(burstdet & ~burstdet_d, self._burstdet_seen.status[i].eq(1)),
             ]
 
-            # DQS and DM ---------------------------------------------------------------------------
+            # DQS and DM
             dm_o_data       = Signal(8)
             dm_o_data_d     = Signal(8)
             dm_o_data_muxed = Signal(4)
@@ -494,7 +476,8 @@ class ECP5DDRPHY(Module, AutoCSR):
                     Tristate(pads.dq[j], dq_o, ~dq_oe_n, dq_i)
                 ]
 
-        # Read Control Path ------------------------------------------------------------------------
+        # Read Control Path
+        #
         # Creates a shift register of read commands coming from the DFI interface. This shift register
         # is used to control DQS read (internal read pulse of the DQSBUF) and to indicate to the
         # DFI interface that the read data is valid.
@@ -504,6 +487,7 @@ class ECP5DDRPHY(Module, AutoCSR):
         #
         # The read data valid is asserted for 1 sys_clk cycle when the data is available on the DFI
         # interface, the latency is the sum of the ODDRX2DQA, CAS, IDDRX2DQA latencies.
+
         rddata_en = Signal(self.settings.read_latency)
         rddata_en_last = Signal.like(rddata_en)
         self.comb += rddata_en.eq(Cat(dfi.phases[self.settings.rdphase].rddata_en, rddata_en_last))
@@ -511,12 +495,14 @@ class ECP5DDRPHY(Module, AutoCSR):
         self.sync += [phase.rddata_valid.eq(rddata_en[-1]) for phase in dfi.phases]
         self.comb += dqs_re.eq(rddata_en[cl_sys_latency + 1] | rddata_en[cl_sys_latency + 2])
 
-        # Write Control Path -----------------------------------------------------------------------
+        # Write Control Path
+        #
         # Creates a shift register of write commands coming from the DFI interface. This shift register
         # is used to control DQ/DQS tristates and to select write data of the DRAM burst from the DFI
         # interface: The PHY is operating in halfrate mode (so provide 4 datas every sys_clk cycles:
         # 2x for DDR, 2x for halfrate) but DDR3 requires a burst of 8 datas (BL8) for best efficiency.
         # Writes are then performed in 2 sys_clk cycles and data needs to be selected for each cycle.
+
         wrdata_en = Signal(cwl_sys_latency + 4)
         wrdata_en_last = Signal.like(wrdata_en)
         self.comb += wrdata_en.eq(Cat(dfi.phases[self.settings.wrphase].wrdata_en, wrdata_en_last))
@@ -525,9 +511,11 @@ class ECP5DDRPHY(Module, AutoCSR):
         self.comb += bl8_chunk.eq(wrdata_en[cwl_sys_latency + 1])
         self.comb += dqs_oe.eq(dq_oe)
 
-        # Write DQS Postamble/Preamble Control Path ------------------------------------------------
+        # Write DQS Postamble/Preamble Control Path
+        #
         # Generates DQS Preamble 1 cycle before the first write and Postamble 1 cycle after the last
         # write. During writes, DQS tristate is configured as output for at least 4 sys_clk cycles:
         # 1 for Preamble, 2 for the Write and 1 for the Postamble.
+
         self.comb += dqs_preamble.eq( wrdata_en[cwl_sys_latency + 0]  & ~wrdata_en[cwl_sys_latency + 1])
         self.comb += dqs_postamble.eq(wrdata_en[cwl_sys_latency + 3]  & ~wrdata_en[cwl_sys_latency + 2])

@@ -6,7 +6,6 @@
 #include <string.h>
 #include <uart.h>
 #include <system.h>
-#include <id.h>
 #include <irq.h>
 #include <crc.h>
 #include <memtest.h>
@@ -130,20 +129,6 @@ static void help_handler(int nb_params, char **params)
     }
 }
 CMD(help, help_handler, "Print this help", MISC_CMDS);
-
-/**
- * Command "ident"
- *
- * Identifier of the system
- */
-static void ident_helper(int nb_params, char **params)
-{
-    char buffer[IDENT_SIZE];
-
-    get_ident(buffer);
-    printf("Ident: %s", (*buffer) ? buffer : "-");
-}
-CMD(ident, ident_helper, "Identifier of the system", SYSTEM_CMDS);
 
 #ifdef CSR_CTRL_RESET_ADDR
 /**

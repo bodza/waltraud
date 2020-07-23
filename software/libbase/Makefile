@@ -1,7 +1,7 @@
 include ../include/generated/variables.mak
 include ../common.mak
 
-OBJECTS = exception.o libc.o errno.o crc16.o crc32.o console.o system.o id.o uart.o time.o strtod.o strcasecmp.o div64.o progress.o memtest.o
+OBJECTS = exception.o libc.o errno.o crc16.o crc32.o console.o system.o uart.o time.o strtod.o strcasecmp.o div64.o progress.o memtest.o
 
 all: crt0.o libbase-nofloat.a # libbase.a
 
