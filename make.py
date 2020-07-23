@@ -17,14 +17,14 @@ from litex.soc.integration import common, export
 from litex.soc.interconnect.csr import AutoCSR, CSRStatus, CSRStorage
 from litex.soc.interconnect import csr_bus, wishbone
 
-from litedram.core import LiteDRAMCore
-from litedram.frontend.wishbone import LiteDRAMWishbone2Native
-from litedram.init import get_sdram_phy_c_header
-from litedram.modules import MT41K64M16
-from litedram.phy import ECP5DDRPHY
+from gateware.litedram.core import LiteDRAMCore
+from gateware.litedram.frontend import LiteDRAMWishbone2Native
+from gateware.litedram.init import get_sdram_phy_c_header
+from gateware.litedram.modules import MT41K64M16
+from gateware.litedram.phy import ECP5DDRPHY
 
-from valentyusb.cpu import CDCUsb
-from valentyusb.io import IoBuf
+from gateware.valentyusb.cpu import CDCUsb
+from gateware.valentyusb.io import IoBuf
 
 logging.basicConfig(level=logging.INFO)
 
@@ -833,7 +833,7 @@ class SoC(Module):
             self.submodules.l2_cache = l2_cache
             litedram_wb = self.l2_cache.slave
         else:
-            litedram_wb     = wishbone.Interface(port.data_width)
+            litedram_wb = wishbone.Interface(port.data_width)
             self.submodules += wishbone.Converter(wb_sdram, litedram_wb)
         self.add_config("L2_SIZE", l2_cache_size)
 

@@ -31,7 +31,6 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <float.h>
 
 #include "int_types.h"
 #include "int_util.h"
