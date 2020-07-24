@@ -1,7 +1,9 @@
 import functools, operator
 
-from migen import *
-from migen.fhdl.decorators import CEInserter, ResetInserter
+from migen.fhdl.decorators import CEInserter, ClockDomainsRenamer, ResetInserter
+from migen.fhdl.module import Module
+from migen.fhdl.structure import If, Signal
+
 from migen.genlib.cdc import MultiReg
 from migen.genlib.fsm import FSM, NextState, NextValue
 

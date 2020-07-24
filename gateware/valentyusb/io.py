@@ -1,4 +1,7 @@
-from migen import *
+from migen.fhdl.module import Module
+from migen.fhdl.specials import Instance, TSTriple
+from migen.fhdl.structure import ClockSignal, If, Signal
+
 #from migen.genlib.cdc import MultiReg
 
 class Raw(Instance.PreformattedParam):

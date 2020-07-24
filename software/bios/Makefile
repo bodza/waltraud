@@ -4,7 +4,7 @@ include ../common.mak
 OBJECTS = isr.o main.o
 
 all: bios.bin
-	$(PYTHON) -m litex.soc.software.memusage bios.elf $(CURDIR)/../include/generated/regions.ld $(TRIPLE)
+	$(PYTHON) -m litex.soc.software.memusage bios.elf $(CURDIR)/../include/generated/regions.ld riscv64-unknown-elf
 
 %.bin: %.elf
 	$(OBJCOPY) -O binary $< $@

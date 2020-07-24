@@ -1,9 +1,10 @@
 import os
 
-from migen import *
+from migen.fhdl.module import Module
+from migen.fhdl.specials import Instance
+from migen.fhdl.structure import ClockSignal, ResetSignal, Signal
 
-from litex.soc.interconnect import wishbone
-from litex.soc.cores.cpu import CPU, CPU_GCC_TRIPLE_RISCV64
+from gateware.wishbone import WishboneInterface
 
 CPU_VARIANTS = ["minimal", "standard"]
 
@@ -19,16 +20,18 @@ GCC_FLAGS = {
     "standard":         "-march=rv32im     -mabi=ilp32 ",
 }
 
-class PicoRV32(CPU):
+class PicoRV32(Module):
     name                 = "picorv32"
     human_name           = "PicoRV32"
     variants             = CPU_VARIANTS
     data_width           = 32
     endianness           = "little"
-    gcc_triple           = CPU_GCC_TRIPLE_RISCV64
     linker_output_format = "elf32-littleriscv"
     nop                  = "nop"
+    interrupts           = {}
+    mem_map              = {}
     io_regions           = {0x80000000: 0x80000000} # origin, length
+    gcc_flags            = None
 
     @property
     def gcc_flags(self):
@@ -51,7 +54,7 @@ class PicoRV32(CPU):
         self.trap         = Signal()
         self.reset        = Signal()
         self.interrupt    = Signal(32)
-        self.idbus        = idbus = wishbone.Interface()
+        self.idbus        = idbus = WishboneInterface()
         self.periph_buses = [idbus]
         self.memory_buses = []
 

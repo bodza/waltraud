@@ -1,10 +1,14 @@
 from math import log2
 
-from migen import *
+from migen.fhdl.bitcontainer import log2_int
+from migen.fhdl.module import Module
+from migen.fhdl.structure import Cat, If, Signal
 
-from litex.soc.interconnect.stream import AsyncFIFO, Buffer, Pipeline, StrideConverter, SyncFIFO
+from migen.genlib.fsm import FSM, NextState, NextValue
 
-from .common import *
+from gateware.stream import AsyncFIFO, Buffer, Pipeline, StrideConverter, SyncFIFO
+
+#from .common import *
 
 class LiteDRAMNativePortCDC(Module):
     def __init__(self, port_from, port_to,

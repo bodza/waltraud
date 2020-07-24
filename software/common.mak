@@ -1,17 +1,9 @@
-ifeq ($(TRIPLE),--native--)
-TARGET_PREFIX=
-else
-TARGET_PREFIX=$(TRIPLE)-
-endif
+TARGET_PREFIX=riscv64-unknown-elf-
 
 RM ?= rm -f
 PYTHON ?= python3
 
-ifeq ($(CLANG),1)
-CC_normal      := clang -target $(TRIPLE) -integrated-as
-else
 CC_normal      := $(TARGET_PREFIX)gcc -std=gnu99
-endif
 AR_normal      := $(TARGET_PREFIX)ar
 LD_normal      := $(TARGET_PREFIX)ld
 OBJCOPY_normal := $(TARGET_PREFIX)objcopy

@@ -1,6 +1,7 @@
-from migen import *
+from migen.fhdl.module import Module
+from migen.fhdl.structure import If, Replicate
 
-from litex.soc.interconnect.csr import *
+from gateware.csr import AutoCSR, CSR, CSRField, CSRStatus, CSRStorage
 
 from .phy import DFIInterface
 

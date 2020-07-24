@@ -2,29 +2,19 @@
 
 import argparse, inspect, logging, math, os, struct, subprocess
 
-from shutil import which
-from sysconfig import get_platform
-
 from migen.fhdl.bitcontainer import log2_int, value_bits_sign
 from migen.fhdl.module import Module
 from migen.fhdl.simplify import FullMemoryWE
-from migen.fhdl.specials import Instance, Memory, Tristate
-from migen.fhdl.structure import ClockDomain, _Fragment, If, Signal
+from migen.fhdl.specials import Instance, Memory, Special, Tristate
+from migen.fhdl.structure import ClockDomain, ClockSignal, _Fragment, If, Signal
 
 from migen.genlib.record import Record
 from migen.genlib.resetsync import AsyncResetSynchronizer
 
-from litex.build.io import CRG, DDRInput, DDROutput, SDRInput, SDROutput
-#from litex.build.io import *
+from gateware import verilog
 
-from litex.gen.fhdl import verilog
-
-from litex.soc.cores.clock import ECP5PLL
-from litex.soc.cores.timer import Timer
-from litex.soc.interconnect import csr_bus, wishbone
-from litex.soc.interconnect.csr import AutoCSR, CSRStatus, CSRStorage
-
-from gateware.picorv32.core import PicoRV32
+from gateware.csr import AutoCSR, CSR, CSRBankArray, CSRBusInterconnectShared, CSRBusInterface, CSRStatus, CSRStorage
+from gateware.ev import EventManager, EventSourceProcess
 
 from gateware.litedram.core import LiteDRAMCore
 from gateware.litedram.frontend import LiteDRAMWishbone2Native
@@ -32,8 +22,12 @@ from gateware.litedram.init import get_sdram_phy_c_header
 from gateware.litedram.modules import MT41K64M16
 from gateware.litedram.phy import ECP5DDRPHY
 
+from gateware.picorv32.core import PicoRV32
+
 from gateware.valentyusb.cpu import CDCUsb
 from gateware.valentyusb.io import IoBuf
+
+from gateware.wishbone import Wishbone2CSR, WishboneCache, WishboneConverter, WishboneInterconnectPointToPoint, WishboneInterconnectShared, WishboneInterface, WishboneSRAM
 
 def _language_by_filename(name):
     extension = name.rsplit(".")[-1]
@@ -280,28 +274,28 @@ class SoCBusHandler(Module):
     def add_adapter(self, name, interface, direction="m2s"):
         assert direction in ["m2s", "s2m"]
 
-        if isinstance(interface, wishbone.Interface):
-            new_interface = wishbone.Interface(data_width=self.data_width)
+        if isinstance(interface, WishboneInterface):
+            new_interface = WishboneInterface(data_width=self.data_width)
             if direction == "m2s":
-                converter = wishbone.Converter(master=interface, slave=new_interface)
+                converter = WishboneConverter(master=interface, slave=new_interface)
             if direction == "s2m":
-                converter = wishbone.Converter(master=new_interface, slave=interface)
+                converter = WishboneConverter(master=new_interface, slave=interface)
             self.submodules += converter
         else:
             raise TypeError(interface)
 
         fmt = "{name} Bus {converted} from {frombus} {frombits}-bit to {tobus} {tobits}-bit."
-        frombus  = "Wishbone" if isinstance(interface, wishbone.Interface) else "AXILite"
-        tobus    = "Wishbone" if isinstance(new_interface, wishbone.Interface) else "AXILite"
+        frombus  = "Wishbone" if isinstance(interface, WishboneInterface) else "AXILite"
+        tobus    = "Wishbone" if isinstance(new_interface, WishboneInterface) else "AXILite"
         frombits = interface.data_width
         tobits   = new_interface.data_width
         if frombus != tobus or frombits != tobits:
             self.logger.info(fmt.format(
                 name      = colorer(name),
                 converted = colorer("converted", color="cyan"),
-                frombus   = colorer("Wishbone" if isinstance(interface, wishbone.Interface) else "AXILite"),
+                frombus   = colorer("Wishbone" if isinstance(interface, WishboneInterface) else "AXILite"),
                 frombits  = colorer(interface.data_width),
-                tobus     = colorer("Wishbone" if isinstance(new_interface, wishbone.Interface) else "AXILite"),
+                tobus     = colorer("Wishbone" if isinstance(new_interface, WishboneInterface) else "AXILite"),
                 tobits    = colorer(new_interface.data_width)))
         return new_interface
 
@@ -756,6 +750,69 @@ def _build_script(source, build_template, build_name, architecture, package, spe
 
     return script_file
 
+class InferedSDRIO(Module):
+    def __init__(self, i, o, clk):
+        self.clock_domains.cd_sdrio = ClockDomain(reset_less=True)
+        self.comb += self.cd_sdrio.clk.eq(clk)
+        self.sync.sdrio += o.eq(i)
+
+class SDRIO(Special):
+    def __init__(self, i, o, clk=ClockSignal()):
+        assert len(i) == len(o) == 1
+        Special.__init__(self)
+        self.i            = wrap(i)
+        self.o            = wrap(o)
+        self.clk          = wrap(clk)
+        self.clk_domain   = None if not hasattr(clk, "cd") else clk.cd
+
+    def iter_expressions(self):
+        yield self, "i",   SPECIAL_INPUT
+        yield self, "o",   SPECIAL_OUTPUT
+        yield self, "clk", SPECIAL_INPUT
+
+    @staticmethod
+    def lower(dr):
+        return InferedSDRIO(dr.i, dr.o, dr.clk, dr.clk_domain)
+
+class SDRInput(SDRIO):  pass
+class SDROutput(SDRIO): pass
+
+class DDRInput(Special):
+    def __init__(self, i, o1, o2, clk=ClockSignal()):
+        Special.__init__(self)
+        self.i   = wrap(i)
+        self.o1  = wrap(o1)
+        self.o2  = wrap(o2)
+        self.clk = wrap(clk)
+
+    def iter_expressions(self):
+        yield self, "i", SPECIAL_INPUT
+        yield self, "o1", SPECIAL_OUTPUT
+        yield self, "o2", SPECIAL_OUTPUT
+        yield self, "clk", SPECIAL_INPUT
+
+    @staticmethod
+    def lower(dr):
+        raise NotImplementedError("Attempted to use a DDR input, but platform does not support them")
+
+class DDROutput(Special):
+    def __init__(self, i1, i2, o, clk=ClockSignal()):
+        Special.__init__(self)
+        self.i1  = i1
+        self.i2  = i2
+        self.o   = o
+        self.clk = clk
+
+    def iter_expressions(self):
+        yield self, "i1", SPECIAL_INPUT
+        yield self, "i2", SPECIAL_INPUT
+        yield self, "o", SPECIAL_OUTPUT
+        yield self, "clk", SPECIAL_INPUT
+
+    @staticmethod
+    def lower(dr):
+        raise NotImplementedError("Attempted to use a DDR output, but platform does not support them")
+
 class LatticeECP5AsyncResetSynchronizerImpl(Module):
     def __init__(self, cd, async_reset):
         rst1 = Signal()
@@ -1141,14 +1198,146 @@ _connectors_r0_2 = [
     ("GPIO", "N17 M18 C10 C9 - B10 B9 - - C8 B8 A8 H2 J2 N15 R17 N16 - L4 N3 N4 H4 G4 T17"),
 ]
 
-class _CRG(Module):
+def register_clkin_log(logger, clkin, freq):
+    logger.info("Registering {} {} of {}.".format(
+        colorer("Differential") if isinstance(clkin, Record) else colorer("Single Ended"),
+        colorer("ClkIn"),
+        colorer("{:3.2f}MHz".format(freq / 1e6))
+    ))
+
+def create_clkout_log(logger, name, freq, margin, nclkouts):
+    logger.info("Creating {} of {} {}.".format(
+        colorer("ClkOut{} {}".format(nclkouts, name)),
+        colorer("{:3.2f}MHz".format(freq / 1e6)),
+        "(+-{:3.2f}ppm)".format(margin * 1e6),
+    ))
+
+def compute_config_log(logger, config):
+    log    = "Config:\n"
+    length = 0
+    for name in config.keys():
+        if len(name) > length: length = len(name)
+    for name, value in config.items():
+        if "freq" in name or "vco" in name:
+            value = "{:3.2f}MHz".format(value / 1e6)
+        if "phase" in name:
+            value = "{:3.2f}°".format(value)
+        log += "{}{}: {}\n".format(name, " "*(length-len(name)), value)
+    log = log[:-1]
+    logger.info(log)
+
+class ECP5PLL(Module):
+    nclkouts_max    = 3
+    clki_div_range  = (1, 128+1)
+    clkfb_div_range = (1, 128+1)
+    clko_div_range  = (1, 128+1)
+    clki_freq_range = (    8e6,  400e6)
+    clko_freq_range = (3.125e6,  400e6)
+    vco_freq_range  = (  400e6,  800e6)
+
+    def __init__(self):
+        self.logger = logging.getLogger("ECP5PLL")
+        self.logger.info("Creating ECP5PLL.")
+        self.reset      = Signal()
+        self.locked     = Signal()
+        self.clkin_freq = None
+        self.vcxo_freq  = None
+        self.nclkouts   = 0
+        self.clkouts    = {}
+        self.config     = {}
+        self.params     = {}
+
+    def register_clkin(self, clkin, freq):
+        (clki_freq_min, clki_freq_max) = self.clki_freq_range
+        assert freq >= clki_freq_min
+        assert freq <= clki_freq_max
+        self.clkin = Signal()
+        if isinstance(clkin, (Signal, ClockSignal)):
+            self.comb += self.clkin.eq(clkin)
+        else:
+            raise ValueError
+        self.clkin_freq = freq
+        register_clkin_log(self.logger, clkin, freq)
+
+    def create_clkout(self, cd, freq, phase=0, margin=1e-2):
+        (clko_freq_min, clko_freq_max) = self.clko_freq_range
+        assert freq >= clko_freq_min
+        assert freq <= clko_freq_max
+        assert self.nclkouts < self.nclkouts_max
+        clkout = Signal()
+        self.clkouts[self.nclkouts] = (clkout, freq, phase, margin)
+        self.comb += cd.clk.eq(clkout)
+        create_clkout_log(self.logger, cd.name, freq, margin, self.nclkouts)
+        self.nclkouts += 1
+
+    def compute_config(self):
+        config = {}
+        for clki_div in range(*self.clki_div_range):
+            config["clki_div"] = clki_div
+            for clkfb_div in range(*self.clkfb_div_range):
+                all_valid = True
+                vco_freq = self.clkin_freq/clki_div*clkfb_div*1 # clkos3_div=1
+                (vco_freq_min, vco_freq_max) = self.vco_freq_range
+                if vco_freq >= vco_freq_min and vco_freq <= vco_freq_max:
+                    for n, (clk, f, p, m) in sorted(self.clkouts.items()):
+                        valid = False
+                        for d in range(*self.clko_div_range):
+                            clk_freq = vco_freq/d
+                            if abs(clk_freq - f) <= f*m:
+                                config["clko{}_freq".format(n)]  = clk_freq
+                                config["clko{}_div".format(n)]   = d
+                                config["clko{}_phase".format(n)] = p
+                                valid = True
+                                break
+                        if not valid:
+                            all_valid = False
+                else:
+                    all_valid = False
+                if all_valid:
+                    config["vco"] = vco_freq
+                    config["clkfb_div"] = clkfb_div
+                    compute_config_log(self.logger, config)
+                    return config
+        raise ValueError("No PLL config found")
+
+    def do_finalize(self):
+        config = self.compute_config()
+        clkfb  = Signal()
+        self.params.update(
+            attr=[
+                ("FREQUENCY_PIN_CLKI",     str(self.clkin_freq/1e6)),
+                ("ICP_CURRENT",            "6"),
+                ("LPF_RESISTOR",          "16"),
+                ("MFG_ENABLE_FILTEROPAMP", "1"),
+                ("MFG_GMCREF_SEL",         "2")],
+            i_RST           = self.reset,
+            i_CLKI          = self.clkin,
+            o_LOCK          = self.locked,
+            p_FEEDBK_PATH   = "INT_OS3", # CLKOS3 reserved for feedback with div=1.
+            p_CLKOS3_ENABLE = "ENABLED",
+            p_CLKOS3_DIV    = 1,
+            p_CLKFB_DIV     = config["clkfb_div"],
+            p_CLKI_DIV      = config["clki_div"],
+        )
+        for n, (clk, f, p, m) in sorted(self.clkouts.items()):
+            n_to_l = {0: "P", 1: "S", 2: "S2"}
+            div    = config["clko{}_div".format(n)]
+            cphase = int(p*(div + 1)/360 + div)
+            self.params["p_CLKO{}_ENABLE".format(n_to_l[n])] = "ENABLED"
+            self.params["p_CLKO{}_DIV".format(n_to_l[n])]    = div
+            self.params["p_CLKO{}_FPHASE".format(n_to_l[n])] = 0
+            self.params["p_CLKO{}_CPHASE".format(n_to_l[n])] = cphase
+            self.params["o_CLKO{}".format(n_to_l[n])]        = clk
+        self.specials += Instance("EHXPLLL", **self.params)
+
+class CRG(Module):
     def __init__(self, platform, sys_clk_freq):
         self.clock_domains.cd_init     = ClockDomain()
         self.clock_domains.cd_por      = ClockDomain(reset_less=True)
         self.clock_domains.cd_sys      = ClockDomain()
         self.clock_domains.cd_sys2x    = ClockDomain()
         self.clock_domains.cd_sys2x_i  = ClockDomain(reset_less=True)
-        self.clock_domains.cd_sys2x_eb = ClockDomain(reset_less=True)
+        #self.clock_domains.cd_sys2x_eb = ClockDomain(reset_less=True)
 
         self.stop  = Signal()
         self.reset = Signal()
@@ -1163,10 +1352,12 @@ class _CRG(Module):
         self.sync.por += If(~por_done, por_count.eq(por_count - 1))
 
         sys2x_clk_ecsout = Signal()
+
         self.submodules.pll = pll = ECP5PLL()
         pll.register_clkin(clk48, 48e6)
         pll.create_clkout(self.cd_sys2x_i, 2*sys_clk_freq)
         pll.create_clkout(self.cd_init, 24e6)
+
         self.specials += [
             Instance("ECLKBRIDGECS",
                 i_CLK0   = self.cd_sys2x_i.clk,
@@ -1187,12 +1378,83 @@ class _CRG(Module):
             AsyncResetSynchronizer(self.cd_sys2x, ~por_done | ~pll.locked | ~rst_n | self.reset),
         ]
 
-        self.clock_domains.cd_usb_12 = ClockDomain()
         self.clock_domains.cd_usb_48 = ClockDomain()
+        self.clock_domains.cd_usb_12 = ClockDomain()
+
         self.submodules.usb_pll = usb_pll = ECP5PLL()
         usb_pll.register_clkin(clk48, 48e6)
         usb_pll.create_clkout(self.cd_usb_48, 48e6)
         usb_pll.create_clkout(self.cd_usb_12, 12e6)
+
+class Timer(Module, AutoCSR):
+    """Timer
+
+    Provides a generic Timer core.
+
+    The Timer is implemented as a countdown timer that can be used in various modes:
+
+    - Polling : Returns current countdown value to software
+    - One-Shot: Loads itself and stops when value reaches ``0``
+    - Periodic: (Re-)Loads itself when value reaches ``0``
+
+    ``en`` register allows the user to enable/disable the Timer. When the Timer is enabled, it is
+    automatically loaded with the value of `load` register.
+
+    When the Timer reaches ``0``, it is automatically reloaded with value of `reload` register.
+
+    The user can latch the current countdown value by writing to ``update_value`` register, it will
+    update ``value`` register with current countdown value.
+
+    To use the Timer in One-Shot mode, the user needs to:
+
+    - Disable the timer
+    - Set the ``load`` register to the expected duration
+    - (Re-)Enable the Timer
+
+    To use the Timer in Periodic mode, the user needs to:
+
+    - Disable the Timer
+    - Set the ``load`` register to 0
+    - Set the ``reload`` register to the expected period
+    - Enable the Timer
+
+    For both modes, the CPU can be advertised by an IRQ that the duration/period has elapsed. (The
+    CPU can also do software polling with ``update_value`` and ``value`` to know the elapsed duration)
+    """
+
+    def __init__(self, width=32):
+        self._load = CSRStorage(width, description="""Load value when Timer is (re-)enabled.
+            In One-Shot mode, the value written to this register specifies the Timer's duration in
+            clock cycles.""")
+        self._reload = CSRStorage(width, description="""Reload value when Timer reaches ``0``.
+            In Periodic mode, the value written to this register specify the Timer's period in
+            clock cycles.""")
+        self._en = CSRStorage(1, description="""Enable flag of the Timer.
+            Set this flag to ``1`` to enable/start the Timer.  Set to ``0`` to disable the Timer.""")
+        self._update_value = CSRStorage(1, description="""Update trigger for the current countdown value.
+            A write to this register latches the current countdown value to ``value`` register.""")
+        self._value = CSRStatus(width, description="""Latched countdown value.
+            This value is updated by writing to ``update_value``.""")
+
+        self.submodules.ev = EventManager()
+        self.ev.zero       = EventSourceProcess()
+        self.ev.finalize()
+
+        value = Signal(width)
+        self.sync += [
+            If(self._en.storage,
+                If(value == 0,
+                    # set reload to 0 to disable reloading
+                    value.eq(self._reload.storage)
+                ).Else(
+                    value.eq(value - 1)
+                )
+            ).Else(
+                value.eq(self._load.storage)
+            ),
+            If(self._update_value.re, self._value.status.eq(value))
+        ]
+        self.comb += self.ev.zero.trigger.eq(value != 0)
 
 class OrangeCrab:
     revision = "0.2"
@@ -1370,7 +1632,7 @@ class Waltraud(Module):
         # Add CSR bridge
         self.add_csr_bridge(self.mem_map["csr"])
 
-        self.submodules.crg = _CRG(self.platform, self.sys_clk_freq)
+        self.submodules.crg = CRG(self.platform, self.sys_clk_freq)
 
         self.submodules.ddrphy = ECP5DDRPHY(self.platform.request("ddram"), sys_clk_freq=self.sys_clk_freq)
         self.csr.add("ddrphy", use_loc_if_exists=True)
@@ -1393,8 +1655,8 @@ class Waltraud(Module):
             self.add_constant(name, value)
 
     def add_ram(self, name, origin, size, contents=[], mode="rw"):
-        ram_bus = wishbone.Interface(data_width=self.bus.data_width)
-        ram     = wishbone.SRAM(size, bus=ram_bus, init=contents, read_only=(mode == "r"))
+        ram_bus = WishboneInterface(data_width=self.bus.data_width)
+        ram     = WishboneSRAM(size, bus=ram_bus, init=contents, read_only=(mode == "r"))
         self.bus.add_slave(name, ram.bus, SoCRegion(origin=origin, size=size, mode=mode))
         setattr(self.submodules, name, ram)
 
@@ -1405,8 +1667,8 @@ class Waltraud(Module):
         self.rom.mem.init = data
 
     def add_csr_bridge(self, origin):
-        self.submodules.csr_bridge = wishbone.Wishbone2CSR(
-            bus_csr       = csr_bus.Interface(
+        self.submodules.csr_bridge = Wishbone2CSR(
+            bus_csr       = CSRBusInterface(
             address_width = self.csr.address_width,
             data_width    = self.csr.data_width),
         )
@@ -1445,7 +1707,7 @@ class Waltraud(Module):
         port.data_width = 2**int(math.log2(port.data_width))
 
         # Create Wishbone Slave.
-        wb_sdram = wishbone.Interface()
+        wb_sdram = WishboneInterface()
         self.bus.add_slave("main_ram", wb_sdram)
 
         # L2 Cache
@@ -1454,10 +1716,10 @@ class Waltraud(Module):
             l2_cache_size = max(l2_cache_size, int(2 * port.data_width / 8))
             l2_cache_size = 2**int(math.log2(l2_cache_size))
             l2_cache_data_width = max(port.data_width, l2_cache_min_data_width)
-            l2_cache            = wishbone.Cache(
+            l2_cache            = WishboneCache(
                 cachesize = l2_cache_size // 4,
                 master    = wb_sdram,
-                slave     = wishbone.Interface(l2_cache_data_width),
+                slave     = WishboneInterface(l2_cache_data_width),
                 reverse   = l2_cache_reverse,
             )
             if l2_cache_full_memory_we:
@@ -1465,8 +1727,8 @@ class Waltraud(Module):
             self.submodules.l2_cache = l2_cache
             litedram_wb = self.l2_cache.slave
         else:
-            litedram_wb = wishbone.Interface(port.data_width)
-            self.submodules += wishbone.Converter(wb_sdram, litedram_wb)
+            litedram_wb = WishboneInterface(port.data_width)
+            self.submodules += WishboneConverter(wb_sdram, litedram_wb)
         self.add_config("L2_SIZE", l2_cache_size)
 
         # Wishbone Slave <--> LiteDRAM bridge
@@ -1482,13 +1744,13 @@ class Waltraud(Module):
         if len(self.bus.masters) and len(self.bus.slaves):
             # If 1 bus_master, 1 bus_slave and no address translation, use InterconnectPointToPoint.
             if ((len(self.bus.masters) == 1) and (len(self.bus.slaves) == 1) and (next(iter(self.bus.regions.values())).origin == 0)):
-                self.submodules.bus_interconnect = wishbone.InterconnectPointToPoint(
+                self.submodules.bus_interconnect = WishboneInterconnectPointToPoint(
                     master = next(iter(self.bus.masters.values())),
                     slave  = next(iter(self.bus.slaves.values())),
                 )
             # Otherwise, use InterconnectShared.
             else:
-                self.submodules.bus_interconnect = wishbone.InterconnectShared(
+                self.submodules.bus_interconnect = WishboneInterconnectShared(
                     masters        = self.bus.masters.values(),
                     slaves         = [(self.bus.regions[n].decoder(self.bus), s) for n, s in self.bus.slaves.items()],
                     register       = True,
@@ -1503,7 +1765,7 @@ class Waltraud(Module):
         self.add_constant("CONFIG_BUS_DATA_WIDTH",    self.bus.data_width)
         self.add_constant("CONFIG_BUS_ADDRESS_WIDTH", self.bus.address_width)
 
-        self.submodules.csr_bankarray = csr_bus.CSRBankArray(self,
+        self.submodules.csr_bankarray = CSRBankArray(self,
             address_map        = self.csr.address_map,
             data_width         = self.csr.data_width,
             address_width      = self.csr.address_width,
@@ -1511,7 +1773,7 @@ class Waltraud(Module):
             paging             = self.csr.paging,
             soc_bus_data_width = self.bus.data_width)
         if len(self.csr.masters):
-            self.submodules.csr_interconnect = csr_bus.InterconnectShared(
+            self.submodules.csr_interconnect = CSRBusInterconnectShared(
                 masters = list(self.csr.masters.values()),
                 slaves  = self.csr_bankarray.get_buses(),
             )
@@ -1590,64 +1852,6 @@ def _get_mem_data(filename_or_regions, endianness="big"):
                     data[int(base, 16) // 4 + i] = struct.unpack(">I", w)[0]
                 i += 1
     return data
-
-def _get_cpu_mak(cpu, compile_software):
-    # select between clang and gcc
-    clang = os.getenv("CLANG", "")
-    if clang != "":
-        clang = bool(int(clang))
-    else:
-        clang = None
-    if not hasattr(cpu, "clang_triple"):
-        if clang:
-            raise ValueError(cpu.name + "not supported with clang.")
-        else:
-            clang = False
-    else:
-        # Default to gcc unless told otherwise
-        if clang is None:
-            clang = False
-    assert isinstance(clang, bool)
-    if clang:
-        triple = cpu.clang_triple
-        flags = cpu.clang_flags
-    else:
-        triple = cpu.gcc_triple
-        flags = cpu.gcc_flags
-
-    # select triple when more than one
-    def select_triple(triple):
-        r = None
-        if not isinstance(triple, tuple):
-            triple = (triple,)
-        p = get_platform()
-        for i in range(len(triple)):
-            t = triple[i]
-            # use native toolchain if host and target platforms are the same
-            if t == 'riscv64-unknown-elf' and p == 'linux-riscv64':
-                r = '--native--'
-                break
-            if which(t+"-gcc"):
-                r = t
-                break
-        if r is None:
-            if not compile_software:
-                return "--not-found--"
-            msg = "Unable to find any of the cross compilation toolchains:\n"
-            for i in range(len(triple)):
-                msg += "- " + triple[i] + "\n"
-            raise OSError(msg)
-        return r
-
-    # return informations
-    return [
-        ("TRIPLE", select_triple(triple)),
-        ("CPU", cpu.name),
-        ("CPUFLAGS", flags),
-        ("CPUENDIANNESS", cpu.endianness),
-        ("CLANG", str(int(clang))),
-        ("CPU_DIRECTORY", os.path.dirname(inspect.getfile(cpu.__class__))),
-    ]
 
 def _get_linker_output_format(cpu):
     return "OUTPUT_FORMAT(\"" + cpu.linker_output_format + "\")\n"
@@ -1793,8 +1997,11 @@ class Builder:
         def define(k, v):
             variables_contents.append("{}={}\n".format(k, v.replace("\\", "\\\\")))
 
-        for k, v in _get_cpu_mak(self.soc.cpu, True):
-            define(k, v)
+        define("CPU", self.soc.cpu.name)
+        define("CPUFLAGS", self.soc.cpu.gcc_flags)
+        define("CPUENDIANNESS", self.soc.cpu.endianness)
+        define("CPU_DIRECTORY", os.path.dirname(inspect.getfile(self.soc.cpu.__class__)))
+
         variables_contents.append("export BUILDINC_DIRECTORY\n")
         define("BUILDINC_DIRECTORY", self.include_dir)
         for name, src_dir in self.software_packages:

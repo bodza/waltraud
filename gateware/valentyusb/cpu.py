@@ -1,33 +1,36 @@
-from migen import *
-from migen.fhdl.decorators import ModuleTransformer
+from migen.fhdl.decorators import ClockDomainsRenamer, ModuleTransformer, ResetInserter
+from migen.fhdl.module import Module
+from migen.fhdl.specials import Memory
+from migen.fhdl.structure import Case, Cat, If, ResetSignal, Signal
 
 from migen.genlib.cdc import MultiReg, PulseSynchronizer
 from migen.genlib.fifo import SyncFIFOBuffered
-from migen.genlib.fsm import FSM, NextState
+from migen.genlib.fsm import FSM, NextState, NextValue
 from migen.genlib.misc import chooser
 from migen.genlib.record import Record
 
-from litex.soc.cores.gpio import GPIOOut
-from litex.soc.integration.doc import AutoDoc, ModuleDoc
-from litex.soc.interconnect import stream, wishbone
-from litex.soc.interconnect import csr_eventmanager as ev
-from litex.soc.interconnect.csr import AutoCSR, CSR, CSRField, CSRStatus, CSRStorage
-from litex.soc.interconnect.csr_eventmanager import *
+from gateware.csr import AutoCSR, CSR, CSRField, CSRStatus, CSRStorage
+from gateware.ev import EventManager, EventSourceProcess, EventSourcePulse, SharedIRQ
+from gateware.gpio import GPIOOut
+from gateware.stream import AsyncFIFO, Endpoint, SyncFIFO
+from gateware.wishbone import WishboneInterface
 
 from .pid import PID
 from .sm import UsbTransfer
 
-class USBWishboneBridge(Module, AutoDoc):
+class USBWishboneBridge(Module):
 
     def __init__(self, usb_core, clk_freq=12000000, magic_packet=0x43, cdc=False):
-        self.wishbone = wishbone.Interface()
+        self.wishbone = WishboneInterface()
 
-        self.background = ModuleDoc(title="USB Wishbone Bridge", body="""
-            This bridge provides a transparent bridge to the target device's Wishbone bus over USB.
-            It can operate without interfering with the device's USB stack.  It is simple enough to
-            be able to work even if the USB stack is not enumerated, though the host may not cooperate.""")
+        """USB Wishbone Bridge
 
-        self.protocol = ModuleDoc(title="USB Wishbone Debug Protocol", body="""
+        This bridge provides a transparent bridge to the target device's Wishbone bus over USB.
+        It can operate without interfering with the device's USB stack.  It is simple enough to
+        be able to work even if the USB stack is not enumerated, though the host may not cooperate."""
+
+        """USB Wishbone Debug Protocol
+
         The protocol transfers four bytes a time in big-endian (i.e. USB) order.  It uses SETUP packets
         with the special type (0x43) as an `attention` word.  This is then followed by an ``OUT`` packet.
 
@@ -70,7 +73,7 @@ class USBWishboneBridge(Module, AutoDoc):
                         {  "name": 'usb byte',    "wave": 'x5555x', "data": '1 2 3 4'}
                     ]
                 ]}
-        """)
+        """
 
         byte_counter = Signal(3, reset_less=True)
         byte_counter_reset = Signal()
@@ -332,7 +335,7 @@ epin_queued: A response is queued and has yet to be acknowledged by the host
 ep_stall: a 32-bit field representing endpoitns to respond with STALL.
 """
 
-class TriEndpointInterface(Module, AutoCSR, AutoDoc):
+class TriEndpointInterface(Module, AutoCSR):
     """Implements a CPU interface with three FIFOs:
         * SETUP
         * IN
@@ -367,124 +370,127 @@ class TriEndpointInterface(Module, AutoCSR, AutoDoc):
 
     def __init__(self, iobuf, debug=False, cdc=False):
 
-        self.background = ModuleDoc(title="USB Device Tri-FIFO", body="""
-            This is a three-FIFO USB device.  It presents one FIFO each for ``IN``, ``OUT``,
-            and ``SETUP`` data.  This allows for up to 16 ``IN`` and 16 ``OUT`` endpoints
-            without sacrificing many FPGA resources.
+        """USB Device Tri-FIFO
 
-            USB supports four types of transfers: control, bulk, interrupt, and isochronous.
-            This device does not yet support isochronous transfers, however it supports the
-            other types of transfers.
-            """)
+        This is a three-FIFO USB device.  It presents one FIFO each for ``IN``, ``OUT``,
+        and ``SETUP`` data.  This allows for up to 16 ``IN`` and 16 ``OUT`` endpoints
+        without sacrificing many FPGA resources.
 
-        self.interrupt_bulk_transfers = ModuleDoc(title="Interrupt and Bulk Transfers", body="""
-            Interrupt and bulk transfers are similar from an implementation standpoint --
-            they differ only in terms of how often they are transmitted.
+        USB supports four types of transfers: control, bulk, interrupt, and isochronous.
+        This device does not yet support isochronous transfers, however it supports the
+        other types of transfers.
+        """
 
-            These transfers can be made to any endpoint, and may even be interleaved.  However,
-            due to the nature of ``TriEndpointInterface`` any attempt by the host to interleave
-            transfers will result in a ``NAK``, and the host will retry later when the buffer
-            is empty.
+        """Interrupt and Bulk Transfers
 
-            IN Transfers
-            ^^^^^^^^^^^^
+        Interrupt and bulk transfers are similar from an implementation standpoint --
+        they differ only in terms of how often they are transmitted.
 
-            To make an ``IN`` transfer (i.e. to send data to the host), write the data to
-            ``IN_DATA``.  This is a FIFO, and each write to this endpoint will advance the
-            FIFO pointer automatically.  This FIFO is 64 bytes deep.  USB ``DATA`` packets
-            contain a CRC16 checksum, which is automatically added to any ``IN`` transfers.
+        These transfers can be made to any endpoint, and may even be interleaved.  However,
+        due to the nature of ``TriEndpointInterface`` any attempt by the host to interleave
+        transfers will result in a ``NAK``, and the host will retry later when the buffer
+        is empty.
 
-            ``TriEndpointInterface`` will continue to respond ``NAK`` until you arm the buffer.
-            Do this by writing the endpoint number to ``IN_CTRL.EPNO``.  This will tell the device
-            that it should send the data the next time the host asks for it.
+        IN Transfers
+        ^^^^^^^^^^^^
 
-            Once the data has been transferred, the device will raise an interrupt and you
-            can begin re-filling the buffer, or fill it with data for a different endpoint.
+        To make an ``IN`` transfer (i.e. to send data to the host), write the data to
+        ``IN_DATA``.  This is a FIFO, and each write to this endpoint will advance the
+        FIFO pointer automatically.  This FIFO is 64 bytes deep.  USB ``DATA`` packets
+        contain a CRC16 checksum, which is automatically added to any ``IN`` transfers.
 
-            To send an empty packet, avoid writing any data to ``IN_DATA`` and simply write
-            the endpoint number to ``IN_CTRL.EPNO``.
+        ``TriEndpointInterface`` will continue to respond ``NAK`` until you arm the buffer.
+        Do this by writing the endpoint number to ``IN_CTRL.EPNO``.  This will tell the device
+        that it should send the data the next time the host asks for it.
 
-            The CRC16 will be automatically appended to the end of the transfer.
+        Once the data has been transferred, the device will raise an interrupt and you
+        can begin re-filling the buffer, or fill it with data for a different endpoint.
 
-            OUT Transfers
-            ^^^^^^^^^^^^^
+        To send an empty packet, avoid writing any data to ``IN_DATA`` and simply write
+        the endpoint number to ``IN_CTRL.EPNO``.
 
-            To respond to an ``OUT`` transfer (i.e. to receive data from the host), enable
-            a particular endpoint by writing to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.ENABLE``
-            bit set.  This will tell the device to stop responding ``NAK`` to that particular
-            endpoint and to accept any incoming data into a 66-byte FIFO, provided the FIFO
-            is empty.
+        The CRC16 will be automatically appended to the end of the transfer.
 
-            Once the host sends data, an interrupt will be raised and that particular endpoint's
-            ``ENABLE`` will be set to ``0``.  This prevents any additional data from entering
-            the FIFO while the device examines the data.
+        OUT Transfers
+        ^^^^^^^^^^^^^
 
-            The FIFO will contain two extra bytes, which are the two-byte CRC16 of the packet.
-            You can safely discard these bytes.  Because of this, a zero-byte transfer will
-            be two-bytes, and a full 64-byte transfer will be 66 bytes.
+        To respond to an ``OUT`` transfer (i.e. to receive data from the host), enable
+        a particular endpoint by writing to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.ENABLE``
+        bit set.  This will tell the device to stop responding ``NAK`` to that particular
+        endpoint and to accept any incoming data into a 66-byte FIFO, provided the FIFO
+        is empty.
 
-            To determine which endpoint the ``OUT`` packet was sent to, refer to
-            ``OUT_STATUS.EPNO``.  This field is only updated when a successful packet is received,
-            and will not change until the ``OUT`` FIFO is re-armed.
+        Once the host sends data, an interrupt will be raised and that particular endpoint's
+        ``ENABLE`` will be set to ``0``.  This prevents any additional data from entering
+        the FIFO while the device examines the data.
 
-            The ``OUT`` FIFO will continue to respond to the host with with ``NAK`` until the
-            ``OUT_EV_PENDING.DONE`` bit is cleared.
+        The FIFO will contain two extra bytes, which are the two-byte CRC16 of the packet.
+        You can safely discard these bytes.  Because of this, a zero-byte transfer will
+        be two-bytes, and a full 64-byte transfer will be 66 bytes.
 
-            Additionally, to continue receiving data on that particular endpoint, you will need
-            to re-enable it by writing the endpoint number, along with the ``OUT_CTRL.ENABLE``
-            to ``OUT_CTRL``.
-            """)
+        To determine which endpoint the ``OUT`` packet was sent to, refer to
+        ``OUT_STATUS.EPNO``.  This field is only updated when a successful packet is received,
+        and will not change until the ``OUT`` FIFO is re-armed.
 
-        self.control_transfers = ModuleDoc(title="Control Transfers", body="""
-            Control transfers are complicated, and are the first sort of transfer that
-            the host uses.  Such transfers have three distinct phases.
+        The ``OUT`` FIFO will continue to respond to the host with with ``NAK`` until the
+        ``OUT_EV_PENDING.DONE`` bit is cleared.
 
-            The first phase is the ``SETUP`` phase, where the host sends an 8-byte ``SETUP``
-            packet.  These ``SETUP`` packets must always be acknowledged, so any such packet
-            from the host will get loaded into the ``SETUP`` FIFO immediately, and an interrupt
-            event raised.  If, for some reason, the device hasn't drained this ``SETUP``
-            FIFO from a previous transaction, the FIFO will be cleared automatically.
+        Additionally, to continue receiving data on that particular endpoint, you will need
+        to re-enable it by writing the endpoint number, along with the ``OUT_CTRL.ENABLE``
+        to ``OUT_CTRL``.
+        """
 
-            Once the ``SETUP`` packet is handled, the host will send an ``IN`` or ``OUT``
-            packet.  If the host sends an ``OUT`` packet, then the ``OUT`` buffer must be
-            cleared, the ``OUT.DONE`` interrupt handled, and the ``OUT_CTRL.ENABLE`` bit
-            must be set for the appropriate endpoint, usually EP0.  The device will not
-            accept any data as long as these three conditions are not met.
+        """Control Transfers
 
-            If the host sends an ``IN`` packet, the device will respond with ``NAK`` if
-            no data has queued.  To queue data, fill the ``IN_DATA`` buffer, then write
-            ``0`` to ``IN_CTRL``.
+        Control transfers are complicated, and are the first sort of transfer that
+        the host uses.  Such transfers have three distinct phases.
 
-            You can continue to fill the buffer (for ``IN`` packets) or drain the buffer
-            and re-enable the endpoint (for ``OUT`` packets) until the host has finished
-            the transfer.
+        The first phase is the ``SETUP`` phase, where the host sends an 8-byte ``SETUP``
+        packet.  These ``SETUP`` packets must always be acknowledged, so any such packet
+        from the host will get loaded into the ``SETUP`` FIFO immediately, and an interrupt
+        event raised.  If, for some reason, the device hasn't drained this ``SETUP``
+        FIFO from a previous transaction, the FIFO will be cleared automatically.
 
-            When the host has finished, it will send the opposite packet type.  If it
-            is making ``IN`` transfers, it will send a single ``OUT`` packet, or if it
-            is making ``OUT`` transfers it will send a single ``IN`` packet.
-            You must handle this transaction yourself.
+        Once the ``SETUP`` packet is handled, the host will send an ``IN`` or ``OUT``
+        packet.  If the host sends an ``OUT`` packet, then the ``OUT`` buffer must be
+        cleared, the ``OUT.DONE`` interrupt handled, and the ``OUT_CTRL.ENABLE`` bit
+        must be set for the appropriate endpoint, usually EP0.  The device will not
+        accept any data as long as these three conditions are not met.
 
-            Stalling an Endpoint
-            ^^^^^^^^^^^^^^^^^^^^
+        If the host sends an ``IN`` packet, the device will respond with ``NAK`` if
+        no data has queued.  To queue data, fill the ``IN_DATA`` buffer, then write
+        ``0`` to ``IN_CTRL``.
 
-            When the host sends a request that cannot be processed -- for example requesting
-            a descriptor that does not exist -- the device must respond with ``STALL``.
+        You can continue to fill the buffer (for ``IN`` packets) or drain the buffer
+        and re-enable the endpoint (for ``OUT`` packets) until the host has finished
+        the transfer.
 
-            Each endpoint keeps track of its own ``STALL`` state, though a ``SETUP`` packet
-            will clear the ``STALL`` state for the specified endpoint (usually EP0).
+        When the host has finished, it will send the opposite packet type.  If it
+        is making ``IN`` transfers, it will send a single ``OUT`` packet, or if it
+        is making ``OUT`` transfers it will send a single ``IN`` packet.
+        You must handle this transaction yourself.
 
-            To set or clear the ``STALL`` bit of an ``IN`` endpoint, write its endpoint number
-            to ``IN_CTRL.EPNO`` with the ``IN_CTRL.STALL`` bit either set or clear.  If
-            this bit is set, then the device will respond to the next ``IN`` packet from the
-            host to that particular endpoint with ``STALL``.  If the bit is clear, then
-            the next ``IN`` packet will be responded to with ``ACK`` and the contents of
-            the ``IN`` FIFO.
+        Stalling an Endpoint
+        ^^^^^^^^^^^^^^^^^^^^
 
-            To stall an ``OUT`` endpoint, write to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.STALL``
-            bit set.  To unstall, write to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.STALL`` bit
-            cleared.  Note that ``OUT_CTRL.ENABLE`` should not be set at the same time as
-            ``OUT_CTRL.STALL``, as this will cause a conflict.
-            """)
+        When the host sends a request that cannot be processed -- for example requesting
+        a descriptor that does not exist -- the device must respond with ``STALL``.
+
+        Each endpoint keeps track of its own ``STALL`` state, though a ``SETUP`` packet
+        will clear the ``STALL`` state for the specified endpoint (usually EP0).
+
+        To set or clear the ``STALL`` bit of an ``IN`` endpoint, write its endpoint number
+        to ``IN_CTRL.EPNO`` with the ``IN_CTRL.STALL`` bit either set or clear.  If
+        this bit is set, then the device will respond to the next ``IN`` packet from the
+        host to that particular endpoint with ``STALL``.  If the bit is clear, then
+        the next ``IN`` packet will be responded to with ``ACK`` and the contents of
+        the ``IN`` FIFO.
+
+        To stall an ``OUT`` endpoint, write to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.STALL``
+        bit set.  To unstall, write to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.STALL`` bit
+        cleared.  Note that ``OUT_CTRL.ENABLE`` should not be set at the same time as
+        ``OUT_CTRL.STALL``, as this will cause a conflict.
+        """
 
         # USB Core
         self.submodules.usb_core = usb_core = UsbTransfer(iobuf)
@@ -543,7 +549,7 @@ class TriEndpointInterface(Module, AutoCSR, AutoDoc):
         self.submodules.out = out_handler = ClockDomainsRenamer("usb_12")(OutHandler(usb_core))
         ems.append(out_handler.ev)
 
-        self.submodules.ev = ev.SharedIRQ(*ems)
+        self.submodules.ev = SharedIRQ(*ems)
 
         in_next = Signal()
         out_next = Signal()
@@ -744,9 +750,9 @@ class SetupHandler(Module, AutoCSR):
             description="Status about the most recent ``SETUP`` transactions, and the state of the FIFO."
         )
 
-        self.submodules.ev = ev.EventManager()
-        self.ev.submodules.packet = ev.EventSourcePulse(name="ready", description="Indicates a ``SETUP`` packet has arrived and is waiting in the ``SETUP`` FIFO.")
-        self.ev.submodules.reset = ev.EventSourceProcess(name="reset", description="Indicates a USB ``RESET`` condition has occurred, and the ``ADDRESS`` is now ``0``.")
+        self.submodules.ev = EventManager()
+        self.ev.submodules.packet = EventSourcePulse(name="ready", description="Indicates a ``SETUP`` packet has arrived and is waiting in the ``SETUP`` FIFO.")
+        self.ev.submodules.reset = EventSourceProcess(name="reset", description="Indicates a USB ``RESET`` condition has occurred, and the ``ADDRESS`` is now ``0``.")
         self.ev.finalize()
         self.trigger = trigger = self.ev.packet.trigger
         self.pending = pending = self.ev.packet.pending
@@ -882,8 +888,8 @@ class InHandler(Module, AutoCSR):
             description="Status about the IN handler.  As soon as you write to `IN_DATA`, ``IN_STATUS.HAVE`` should go to ``1``."
         )
 
-        self.submodules.ev = ev.EventManager()
-        self.ev.submodules.packet = ev.EventSourcePulse(name="done", description="Indicates that the host has successfully transferred an ``IN`` packet, and that the FIFO is now empty.")
+        self.submodules.ev = EventManager()
+        self.ev.submodules.packet = EventSourcePulse(name="done", description="Indicates that the host has successfully transferred an ``IN`` packet, and that the FIFO is now empty.")
         self.ev.finalize()
 
         # Control bits
@@ -1042,8 +1048,8 @@ class OutHandler(Module, AutoCSR):
             description="Status about the current state of the `OUT` endpoint."
         )
 
-        self.submodules.ev = ev.EventManager()
-        self.ev.submodules.packet = ev.EventSourcePulse(name="done", description="""
+        self.submodules.ev = EventManager()
+        self.ev.submodules.packet = EventSourcePulse(name="done", description="""
             Indicates that an ``OUT`` packet has successfully been transferred from the host.  This bit must be cleared in order to receive additional packets.""")
         self.ev.finalize()
 
@@ -1189,7 +1195,7 @@ class CSRTransform(ModuleTransformer):
                     setattr(c, "dat_w", Signal(c.size))
                     c.sync += If(c.re, c.storage.eq(c.dat_w))
 
-class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
+class CDCUsb(Module, AutoCSR):
     """DummyUSB Self-Enumerating USB Controller
 
     This implements a device that simply responds to the most common SETUP packets.
@@ -1214,8 +1220,8 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
 
         self._configured = CSR()
 
-        self.sink   = stream.Endpoint([("data", 8)])
-        self.source = stream.Endpoint([("data", 8)])
+        self.sink   = Endpoint([("data", 8)])
+        self.source = Endpoint([("data", 8)])
 
         self.rts = Signal()
         self.dtr = Signal()
@@ -1241,9 +1247,9 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
             ]
 
         # TX
-        tx_fifo = ClockDomainsRenamer({"write":"sys","read":"usb_12"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False))
-        #tx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False)))
-        #tx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
+        tx_fifo = ClockDomainsRenamer({"write":"sys","read":"usb_12"})(AsyncFIFO([("data", 8)], 4, buffered=False))
+        #tx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(AsyncFIFO([("data", 8)], 4, buffered=False)))
+        #tx_fifo = SyncFIFO([("data", 8)], 4, buffered=True)
         self.submodules += tx_fifo
 
         self.comb += [
@@ -1256,9 +1262,9 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
         ]
 
         # RX
-        rx_fifo = ClockDomainsRenamer({"write":"usb_12","read":"sys"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False))
-        #rx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(stream.AsyncFIFO([("data", 8)], 4, buffered=False)))
-        #rx_fifo = stream.SyncFIFO([("data", 8)], 4, buffered=True)
+        rx_fifo = ClockDomainsRenamer({"write":"usb_12","read":"sys"})(AsyncFIFO([("data", 8)], 4, buffered=False))
+        #rx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(AsyncFIFO([("data", 8)], 4, buffered=False)))
+        #rx_fifo = SyncFIFO([("data", 8)], 4, buffered=True)
         self.submodules += rx_fifo
 
         self.comb += [
@@ -1270,7 +1276,7 @@ class CDCUsb(Module, AutoDoc, ModuleDoc, AutoCSR):
             self.ev.rx.trigger.eq(~rx_fifo.source.valid)
         ]
 
-class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
+class CDCUsbPHY(Module):
     """DummyUSB Self-Enumerating USB Controller
 
     This implements a device that simply responds to the most common SETUP packets.
@@ -1284,8 +1290,8 @@ class CDCUsbPHY(Module, AutoDoc, ModuleDoc):
         #usb.finalize()
         self.submodules.eptri = usb = CSRTransform(self)(usb)
 
-        self.sink   = stream.Endpoint([("data", 8)])
-        self.source = stream.Endpoint([("data", 8)])
+        self.sink   = Endpoint([("data", 8)])
+        self.source = Endpoint([("data", 8)])
 
         self.rts = Signal()
         self.dtr = Signal()

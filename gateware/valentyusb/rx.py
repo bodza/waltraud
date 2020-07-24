@@ -1,6 +1,10 @@
-from migen import *
-from migen.fhdl.decorators import ResetInserter
+from migen.fhdl.decorators import ClockDomainsRenamer, ResetInserter
+from migen.fhdl.module import Module
+from migen.fhdl.structure import Case, Cat, If, Signal
+
 from migen.genlib.cdc import MultiReg
+from migen.genlib.fifo import AsyncFIFO
+from migen.genlib.fsm import FSM, NextState
 
 @ResetInserter()
 class RxBitstuffRemover(Module):
@@ -614,7 +618,7 @@ class RxPipeline(Module):
         flag_start = Signal()
         flag_end = Signal()
         flag_valid = Signal()
-        payloadFifo = genlib.fifo.AsyncFIFO(8, 2)
+        payloadFifo = AsyncFIFO(8, 2)
         self.submodules.payloadFifo = payloadFifo = ClockDomainsRenamer({"write":"usb_48", "read":"usb_12"})(payloadFifo)
 
         self.comb += [
@@ -625,7 +629,7 @@ class RxPipeline(Module):
             payloadFifo.re.eq(1),
         ]
 
-        flagsFifo = genlib.fifo.AsyncFIFO(2, 2)
+        flagsFifo = AsyncFIFO(2, 2)
         self.submodules.flagsFifo = flagsFifo = ClockDomainsRenamer({"write":"usb_48", "read":"usb_12"})(flagsFifo)
 
         self.comb += [

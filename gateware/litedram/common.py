@@ -3,9 +3,13 @@ from collections import OrderedDict
 from functools import reduce
 from operator import add
 
-from migen import *
+from migen.fhdl.bitcontainer import log2_int
+from migen.fhdl.module import Module
+from migen.fhdl.structure import Array, Case, Cat, If, Signal
 
-from litex.soc.interconnect.stream import Endpoint
+from migen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record
+
+from gateware.stream import Endpoint
 
 burst_lengths = {
     "SDR":   1,

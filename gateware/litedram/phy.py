@@ -1,14 +1,17 @@
 import math
 
-from migen import *
-from migen.fhdl.specials import Tristate
+from migen.fhdl.bitcontainer import log2_int
+from migen.fhdl.module import Module
+from migen.fhdl.specials import Instance, Tristate
+from migen.fhdl.structure import Case, Cat, ClockSignal, If, ResetSignal, Signal
+
 from migen.genlib.cdc import MultiReg
 from migen.genlib.misc import timeline
-from migen.genlib.record import *
+from migen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record
 
-from litex.soc.interconnect.csr import *
+from gateware.csr import AutoCSR, CSR, CSRStatus, CSRStorage
 
-from .common import *
+from .common import BitSlip, get_cl_cw, get_sys_latency, get_sys_phases, PHYPadsCombiner, PhySettings
 
 def phase_cmd_description(addressbits, bankbits, nranks):
     return [
