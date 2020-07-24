@@ -7,7 +7,6 @@
 
 void isr(void);
 
-#ifdef CONFIG_CPU_HAS_INTERRUPT
 void isr(void)
 {
     __attribute__((unused)) unsigned int irqs;
@@ -20,6 +19,3 @@ void isr(void)
     }
 #endif
 }
-#else
-void isr(void) { };
-#endif
