@@ -1,11 +1,11 @@
 from enum import IntEnum
 
-from migen.fhdl.decorators import ClockDomainsRenamer, ResetInserter
-from migen.fhdl.module import Module
-from migen.fhdl.structure import Case, Cat, If, Signal
+from eigen.fhdl.decorators import ClockDomainsRenamer, ResetInserter
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import Case, Cat, If, Signal
 
-from migen.genlib.cdc import MultiReg
-from migen.genlib.fsm import FSM, NextValue, NextState
+from eigen.genlib.cdc import MultiReg
+from eigen.genlib.fsm import FSM, NextValue, NextState
 
 from .pid import PID, PIDTypes
 from .rx import RxPipeline

@@ -1,5 +1,5 @@
-from migen.fhdl.module import Module
-from migen.fhdl.structure import If, Replicate
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import If, Replicate
 
 from gateware.csr import AutoCSR, CSR, CSRField, CSRStatus, CSRStorage
 

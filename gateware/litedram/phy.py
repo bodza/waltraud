@@ -1,13 +1,12 @@
 import math
 
-from migen.fhdl.bitcontainer import log2_int
-from migen.fhdl.module import Module
-from migen.fhdl.specials import Instance, Tristate
-from migen.fhdl.structure import Case, Cat, ClockSignal, If, ResetSignal, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.specials import Instance, Tristate
+from eigen.fhdl.structure import Case, Cat, ClockSignal, If, log2_int, ResetSignal, Signal
 
-from migen.genlib.cdc import MultiReg
-from migen.genlib.misc import timeline
-from migen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record
+from eigen.genlib.cdc import MultiReg
+from eigen.genlib.misc import timeline
+from eigen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record
 
 from gateware.csr import AutoCSR, CSR, CSRStatus, CSRStorage
 
@@ -59,7 +58,7 @@ class DFIInterface(Record):
             p.we_n.reset = 1
             p.act_n.reset = 1
 
-    # Returns pairs (DFI-mandated signal name, Migen signal object)
+    # Returns pairs (DFI-mandated signal name, Eigen signal object)
     def get_standard_names(self, m2s=True, s2m=True):
         r = []
         add_suffix = len(self.phases) > 1

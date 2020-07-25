@@ -1,13 +1,13 @@
-from migen.fhdl.decorators import ClockDomainsRenamer, ModuleTransformer, ResetInserter
-from migen.fhdl.module import Module
-from migen.fhdl.specials import Memory
-from migen.fhdl.structure import Case, Cat, If, ResetSignal, Signal
+from eigen.fhdl.decorators import ClockDomainsRenamer, ModuleTransformer, ResetInserter
+from eigen.fhdl.module import Module
+from eigen.fhdl.specials import Memory
+from eigen.fhdl.structure import Case, Cat, If, ResetSignal, Signal
 
-from migen.genlib.cdc import MultiReg, PulseSynchronizer
-from migen.genlib.fifo import SyncFIFOBuffered
-from migen.genlib.fsm import FSM, NextState, NextValue
-from migen.genlib.misc import chooser
-from migen.genlib.record import Record
+from eigen.genlib.cdc import MultiReg, PulseSynchronizer
+from eigen.genlib.fifo import SyncFIFOBuffered
+from eigen.genlib.fsm import FSM, NextState, NextValue
+from eigen.genlib.misc import chooser
+from eigen.genlib.record import Record
 
 from gateware.csr import AutoCSR, CSR, CSRField, CSRStatus, CSRStorage
 from gateware.ev import EventManager, EventSourceProcess, EventSourcePulse, SharedIRQ

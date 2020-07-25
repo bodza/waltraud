@@ -2,22 +2,20 @@ import math
 from functools import reduce
 from operator import or_, and_
 
-from migen.fhdl.bitcontainer import bits_for, log2_int
-from migen.fhdl.module import Module
-from migen.fhdl.structure import Array, Case, Cat, If, Replicate, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import Array, bits_for, Case, Cat, If, log2_int, Replicate, Signal
 
-from migen.genlib.coding import Decoder
-from migen.genlib.fsm import FSM, NextState
-from migen.genlib.misc import timeline
-from migen.genlib.record import Record
-from migen.genlib.roundrobin import RoundRobin, SP_CE
+from eigen.genlib.coding import Decoder
+from eigen.genlib.fsm import FSM, NextState
+from eigen.genlib.misc import timeline
+from eigen.genlib.record import Record
+from eigen.genlib.roundrobin import RoundRobin, SP_CE
 
 from gateware.csr import AutoCSR
 from gateware.stream import Buffer, Endpoint, SyncFIFO
 
 from .common import cmd_layout, cmd_request_layout, cmd_request_rw_layout, LiteDRAMInterface, LiteDRAMNativePort, Settings, tFAWController, tXXDController
 from .dfii import DFIInjector
-#from .frontend import *
 from .phy import DFIInterface
 
 class RefreshExecuter(Module):

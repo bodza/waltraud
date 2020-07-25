@@ -1,10 +1,10 @@
 from collections import defaultdict, Iterable
 from operator import itemgetter
 
-from migen.fhdl.conv_output import ConvOutput
-from migen.fhdl.namer import build_namespace
-from migen.fhdl.structure import _Assign, Case, Cat, _Fragment, If, _Operator, Replicate, Signal, _Slice
-from migen.fhdl.tools import call_special_classmethod, Constant, group_by_targets, insert_resets, is_variable, list_clock_domains, list_signals, list_special_ios, list_targets, lower_basics, lower_complex_slices, lower_specials
+from eigen.fhdl.conv_output import ConvOutput
+from eigen.fhdl.namer import build_namespace
+from eigen.fhdl.structure import _Assign, Case, Cat, Constant, _Fragment, If, _Operator, Replicate, Signal, _Slice
+from eigen.fhdl.tools import call_special_classmethod, group_by_targets, insert_resets, is_variable, list_clock_domains, list_signals, list_special_ios, list_targets, lower_basics, lower_complex_slices, lower_specials
 
 _reserved_keywords = {
     "always", "and", "assign", "automatic", "begin", "buf", "bufif0", "bufif1",

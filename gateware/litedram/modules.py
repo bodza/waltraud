@@ -1,6 +1,6 @@
 from math import ceil
 
-from migen.fhdl.bitcontainer import log2_int
+from eigen.fhdl.structure import log2_int
 
 from .common import Settings, GeomSettings, TimingSettings
 

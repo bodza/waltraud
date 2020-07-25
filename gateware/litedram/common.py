@@ -3,11 +3,10 @@ from collections import OrderedDict
 from functools import reduce
 from operator import add
 
-from migen.fhdl.bitcontainer import log2_int
-from migen.fhdl.module import Module
-from migen.fhdl.structure import Array, Case, Cat, If, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import Array, Case, Cat, If, log2_int, Signal
 
-from migen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record
+from eigen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record
 
 from gateware.stream import Endpoint
 

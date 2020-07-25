@@ -1,8 +1,8 @@
 import os
 
-from migen.fhdl.module import Module
-from migen.fhdl.specials import Instance
-from migen.fhdl.structure import ClockSignal, ResetSignal, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.specials import Instance
+from eigen.fhdl.structure import ClockSignal, ResetSignal, Signal
 
 from gateware.wishbone import WishboneInterface
 

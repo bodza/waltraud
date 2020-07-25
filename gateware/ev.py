@@ -1,11 +1,11 @@
 from functools import reduce
 from operator import or_
 
-from migen.fhdl.module import Module
-from migen.fhdl.structure import DUID, If, Signal
-from migen.fhdl.tracer import get_obj_var_name
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import DUID, If, Signal
+from eigen.fhdl.tracer import get_obj_var_name
 
-from migen.util.misc import xdir
+from eigen.util.misc import xdir
 
 from gateware.csr import AutoCSR, CSR, CSRStorage
 

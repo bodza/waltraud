@@ -2,16 +2,15 @@ from enum import IntEnum
 from functools import reduce
 from operator import or_
 
-from migen.fhdl.bitcontainer import bits_for, log2_int
-from migen.fhdl.module import Module
-from migen.fhdl.specials import Memory
-from migen.fhdl.structure import Case, Cat, DUID, If, Signal
-from migen.fhdl.tracer import get_obj_var_name
+from eigen.fhdl.module import Module
+from eigen.fhdl.specials import Memory
+from eigen.fhdl.structure import bits_for, Case, Cat, DUID, If, log2_int, Signal
+from eigen.fhdl.tracer import get_obj_var_name
 
-from migen.genlib.misc import chooser
-from migen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record, set_layout_parameters
+from eigen.genlib.misc import chooser
+from eigen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record, set_layout_parameters
 
-from migen.util.misc import xdir
+from eigen.util.misc import xdir
 
 """
 Configuration and Status Registers

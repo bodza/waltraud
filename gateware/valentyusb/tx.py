@@ -1,11 +1,11 @@
 import functools, operator
 
-from migen.fhdl.decorators import CEInserter, ClockDomainsRenamer, ResetInserter
-from migen.fhdl.module import Module
-from migen.fhdl.structure import If, Signal
+from eigen.fhdl.decorators import CEInserter, ClockDomainsRenamer, ResetInserter
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import If, Signal
 
-from migen.genlib.cdc import MultiReg
-from migen.genlib.fsm import FSM, NextState, NextValue
+from eigen.genlib.cdc import MultiReg
+from eigen.genlib.fsm import FSM, NextState, NextValue
 
 @ResetInserter()
 class TxBitstuffer(Module):

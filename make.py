@@ -2,14 +2,13 @@
 
 import argparse, inspect, logging, math, os, struct, subprocess
 
-from migen.fhdl.bitcontainer import log2_int, value_bits_sign
-from migen.fhdl.module import Module
-from migen.fhdl.simplify import FullMemoryWE
-from migen.fhdl.specials import Instance, Memory, Special, Tristate
-from migen.fhdl.structure import ClockDomain, ClockSignal, _Fragment, If, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.simplify import FullMemoryWE
+from eigen.fhdl.specials import Instance, Memory, Special, Tristate
+from eigen.fhdl.structure import ClockDomain, ClockSignal, _Fragment, If, log2_int, Signal, value_bits_sign
 
-from migen.genlib.record import Record
-from migen.genlib.resetsync import AsyncResetSynchronizer
+from eigen.genlib.record import Record
+from eigen.genlib.resetsync import AsyncResetSynchronizer
 
 from gateware import verilog
 

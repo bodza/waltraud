@@ -1,4 +1,4 @@
-from migen import log2_int
+from eigen.fhdl.structure import log2_int
 
 cmds = {
     "PRECHARGE_ALL": "DFII_COMMAND_RAS|DFII_COMMAND_WE|DFII_COMMAND_CS",

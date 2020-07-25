@@ -1,10 +1,10 @@
 import math
 
-from migen.fhdl.module import Module
-from migen.fhdl.structure import Case, If, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import Case, If, Signal
 
-from migen.genlib import fifo
-from migen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, layout_len, Record
+from eigen.genlib import fifo
+from eigen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, layout_len, Record
 
 def _make_m2s(layout):
     r = []

@@ -1,15 +1,14 @@
 from functools import reduce
 from operator import or_
 
-from migen.fhdl.bitcontainer import log2_int
-from migen.fhdl.module import Module
-from migen.fhdl.specials import Memory, READ_FIRST, WRITE_FIRST
-from migen.fhdl.structure import Array, Case, Cat, If, Replicate, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.specials import Memory, READ_FIRST, WRITE_FIRST
+from eigen.fhdl.structure import Array, Case, Cat, If, log2_int, Replicate, Signal
 
-from migen.genlib.fsm import FSM, NextState, NextValue
-from migen.genlib.misc import split, displacer, chooser, WaitTimer
-from migen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, layout_len, Record, set_layout_parameters
-from migen.genlib.roundrobin import RoundRobin
+from eigen.genlib.fsm import FSM, NextState, NextValue
+from eigen.genlib.misc import split, displacer, chooser, WaitTimer
+from eigen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, layout_len, Record, set_layout_parameters
+from eigen.genlib.roundrobin import RoundRobin
 
 from gateware.csr import CSRBusInterface
 

@@ -1,6 +1,6 @@
-from migen.fhdl.module import Module
+from eigen.fhdl.module import Module
 
-from migen.genlib.cdc import MultiReg
+from eigen.genlib.cdc import MultiReg
 
 from gateware.csr import AutoCSR, CSRStatus, CSRStorage
 

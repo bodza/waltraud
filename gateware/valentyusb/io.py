@@ -1,8 +1,8 @@
-from migen.fhdl.module import Module
-from migen.fhdl.specials import Instance, TSTriple
-from migen.fhdl.structure import ClockSignal, If, Signal
+from eigen.fhdl.module import Module
+from eigen.fhdl.specials import Instance, TSTriple
+from eigen.fhdl.structure import ClockSignal, If, Signal
 
-#from migen.genlib.cdc import MultiReg
+#from eigen.genlib.cdc import MultiReg
 
 class Raw(Instance.PreformattedParam):
     def __init__(self, value):

@@ -1,10 +1,10 @@
-from migen.fhdl.decorators import ClockDomainsRenamer, ResetInserter
-from migen.fhdl.module import Module
-from migen.fhdl.structure import Case, Cat, If, Signal
+from eigen.fhdl.decorators import ClockDomainsRenamer, ResetInserter
+from eigen.fhdl.module import Module
+from eigen.fhdl.structure import Case, Cat, If, Signal
 
-from migen.genlib.cdc import MultiReg
-from migen.genlib.fifo import AsyncFIFO
-from migen.genlib.fsm import FSM, NextState
+from eigen.genlib.cdc import MultiReg
+from eigen.genlib.fifo import AsyncFIFO
+from eigen.genlib.fsm import FSM, NextState
 
 @ResetInserter()
 class RxBitstuffRemover(Module):
