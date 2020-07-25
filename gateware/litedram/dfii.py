@@ -7,12 +7,12 @@ from .phy import DFIInterface
 
 class PhaseInjector(Module, AutoCSR):
     def __init__(self, phase):
-        self._command       = CSRStorage(6)  # cs, we, cas, ras, wren, rden
-        self._command_issue = CSR()
-        self._address       = CSRStorage(len(phase.address), reset_less=True)
-        self._baddress      = CSRStorage(len(phase.bank),    reset_less=True)
-        self._wrdata        = CSRStorage(len(phase.wrdata),  reset_less=True)
-        self._rddata        = CSRStatus(len(phase.rddata))
+        self._command       = CSRStorage("command", 6)  # cs, we, cas, ras, wren, rden
+        self._command_issue = CSR("command_issue")
+        self._address       = CSRStorage("address", len(phase.address), reset_less=True)
+        self._baddress      = CSRStorage("baddress", len(phase.bank),    reset_less=True)
+        self._wrdata        = CSRStorage("wrdata", len(phase.wrdata),  reset_less=True)
+        self._rddata        = CSRStatus("rddata", len(phase.rddata))
 
         self.comb += [
             If(self._command_issue.re,
@@ -41,7 +41,7 @@ class DFIInjector(Module, AutoCSR):
         self.slave  = DFIInterface(addressbits, bankbits, nranks, databits, nphases)
         self.master = DFIInterface(addressbits, bankbits, nranks, databits, nphases)
 
-        self._control = CSRStorage(fields=[
+        self._control = CSRStorage("control", fields=[
             CSRField("sel",     size=1, values=[
                 ("``0b0``", "Software (CPU) control."),
                 ("``0b1`",  "Hardware control (default)."),

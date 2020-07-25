@@ -74,11 +74,11 @@ class _FIFOInterface:
         yield self.we.eq(0)
         yield
 
-class SyncFIFO(Module, _FIFOInterface):
+class _SyncFIFO(Module, _FIFOInterface):
     """Synchronous FIFO (first in, first out)
 
     Read and write interfaces are accessed from the same clock domain.
-    If different clock domains are needed, use :class:`AsyncFIFO`.
+    If different clock domains are needed, use :class:`_AsyncFIFO`.
 
     {interface}
     level : out
@@ -88,8 +88,6 @@ class SyncFIFO(Module, _FIFOInterface):
         if that entry has already been read (i.e. the FIFO is empty).
         Assert in conjunction with `we`.
     """
-    __doc__ = __doc__.format(interface=_FIFOInterface.__doc__)
-
     def __init__(self, width, depth, fwft=True):
         _FIFOInterface.__init__(self, width, depth)
 
@@ -98,7 +96,7 @@ class SyncFIFO(Module, _FIFOInterface):
 
         produce = Signal(max=depth)
         consume = Signal(max=depth)
-        storage = Memory(self.width, depth)
+        storage = Memory("storage", self.width, depth)
         self.specials += storage
 
         wrport = storage.get_port(write_capable=True, mode=READ_FIRST)
@@ -138,13 +136,13 @@ class SyncFIFO(Module, _FIFOInterface):
             self.readable.eq(self.level != 0)
         ]
 
-class SyncFIFOBuffered(Module, _FIFOInterface):
-    """Has an interface compatible with SyncFIFO with fwft=True,
+class _SyncFIFOBuffered(Module, _FIFOInterface):
+    """Has an interface compatible with _SyncFIFO with fwft=True,
     but does not use asynchronous RAM reads that are not compatible
     with block RAMs. Increases latency by one cycle."""
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
-        self.submodules.fifo = fifo = SyncFIFO(width, depth, False)
+        self.submodules.fifo = fifo = _SyncFIFO(width, depth, False)
 
         self.writable = fifo.writable
         self.din = fifo.din
@@ -161,7 +159,7 @@ class SyncFIFOBuffered(Module, _FIFOInterface):
             )
         self.comb += self.level.eq(fifo.level + self.readable)
 
-class AsyncFIFO(Module, _FIFOInterface):
+class _AsyncFIFO(Module, _FIFOInterface):
     """Asynchronous FIFO (first in, first out)
 
     Read and write interfaces are accessed from different clock domains,
@@ -170,8 +168,6 @@ class AsyncFIFO(Module, _FIFOInterface):
 
     {interface}
     """
-    __doc__ = __doc__.format(interface=_FIFOInterface.__doc__)
-
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
 
@@ -199,7 +195,7 @@ class AsyncFIFO(Module, _FIFOInterface):
             ]
         self.comb += self.readable.eq(consume.q != produce_rdomain)
 
-        storage = Memory(self.width, depth)
+        storage = Memory("storage", self.width, depth)
         self.specials += storage
         wrport = storage.get_port(write_capable=True, clock_domain="write")
         self.specials += wrport
@@ -215,12 +211,12 @@ class AsyncFIFO(Module, _FIFOInterface):
             self.dout.eq(rdport.dat_r)
         ]
 
-class AsyncFIFOBuffered(Module, _FIFOInterface):
+class _AsyncFIFOBuffered(Module, _FIFOInterface):
     """Improves timing when it breaks due to sluggish clock-to-output
     delay in e.g. Xilinx block RAMs. Increases latency by one cycle."""
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
-        self.submodules.fifo = fifo = AsyncFIFO(width, depth)
+        self.submodules.fifo = fifo = _AsyncFIFO(width, depth)
 
         self.writable = fifo.writable
         self.din = fifo.din

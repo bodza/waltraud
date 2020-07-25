@@ -24,7 +24,7 @@ class FullMemoryWE(ModuleTransformer):
                         newinit = None
                     else:
                         newinit = [(v >> i*global_granularity) & (2**global_granularity - 1) for v in orig.init]
-                    newmem = Memory(global_granularity, orig.depth, newinit, orig.name_override + "_grain" + str(i))
+                    newmem = Memory(orig.name_override + "_grain" + str(i), global_granularity, orig.depth, newinit)
                     newspecials.add(newmem)
                     newmems.append(newmem)
                     for port in orig.ports:
@@ -154,7 +154,7 @@ class SplitMemory(ModuleTransformer):
                 init = inits[:depth]
                 del inits[:depth]
             name = "{}_part{}".format(mem.name_override, i)
-            mems.append(Memory(width=mem.width, depth=depth, init=init, name=name))
+            mems.append(Memory(name, mem.width, depth, init))
         ports = []
         comb = []
         sync = {}

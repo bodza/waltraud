@@ -11,7 +11,7 @@ from eigen.genlib.misc import timeline
 from eigen.genlib.record import Record
 from eigen.genlib.roundrobin import RoundRobin, SP_CE
 
-from gateware.csr import AutoCSR
+from gateware.csr import AutoCSR, CSR, CSRStatus
 from gateware.stream import Buffer, Endpoint, SyncFIFO
 
 from .common import cmd_layout, cmd_request_layout, cmd_request_rw_layout, LiteDRAMInterface, LiteDRAMNativePort, Settings, tFAWController, tXXDController
@@ -530,10 +530,10 @@ class Bandwidth(Module, AutoCSR):
             bandwidth = (nreads+nwrites) * data_width / period
     """
     def __init__(self, cmd, data_width, period_bits=24):
-        self.update     = CSR()
-        self.nreads     = CSRStatus(period_bits + 1)
-        self.nwrites    = CSRStatus(period_bits + 1)
-        self.data_width = CSRStatus(bits_for(data_width), reset=data_width)
+        self.update     = CSR("update")
+        self.nreads     = CSRStatus("nreads", period_bits + 1)
+        self.nwrites    = CSRStatus("nwrites", period_bits + 1)
+        self.data_width = CSRStatus("data_width", bits_for(data_width), reset=data_width)
 
         cmd_valid    = Signal()
         cmd_ready    = Signal()

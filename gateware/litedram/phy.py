@@ -159,18 +159,18 @@ class ECP5DDRPHY(Module, AutoCSR):
         cwl_sys_latency = get_sys_latency(nphases, cwl)
 
         # Registers
-        self._dly_sel = CSRStorage(databits//8)
+        self._dly_sel = CSRStorage("dly_sel", databits // 8)
 
-        self._rdly_dq_rst         = CSR()
-        self._rdly_dq_inc         = CSR()
-        self._rdly_dq_bitslip_rst = CSR()
-        self._rdly_dq_bitslip     = CSR()
+        self._rdly_dq_rst         = CSR("rdly_dq_rst")
+        self._rdly_dq_inc         = CSR("rdly_dq_inc")
+        self._rdly_dq_bitslip_rst = CSR("rdly_dq_bitslip_rst")
+        self._rdly_dq_bitslip     = CSR("rdly_dq_bitslip")
 
-        self._burstdet_clr  = CSR()
-        self._burstdet_seen = CSRStatus(databits//8)
+        self._burstdet_clr  = CSR("burstdet_clr")
+        self._burstdet_seen = CSRStatus("burstdet_seen", databits // 8)
 
         # Observation
-        self.datavalid = Signal(databits//8)
+        self.datavalid = Signal(databits // 8)
 
         # PHY settings
         rdcmdphase, rdphase = get_sys_phases(nphases, cl_sys_latency, cl)
@@ -179,7 +179,7 @@ class ECP5DDRPHY(Module, AutoCSR):
             phytype       = "ECP5DDRPHY",
             memtype       = memtype,
             databits      = databits,
-            dfi_databits  = 4*databits,
+            dfi_databits  = 4 * databits,
             nranks        = nranks,
             nphases       = nphases,
             rdphase       = rdphase,
@@ -188,12 +188,12 @@ class ECP5DDRPHY(Module, AutoCSR):
             wrcmdphase    = wrcmdphase,
             cl            = cl,
             cwl           = cwl,
-            read_latency  = 2 + cl_sys_latency + 2 + log2_int(4//nphases) + 5,
+            read_latency  = 2 + cl_sys_latency + 2 + log2_int(4 // nphases) + 5,
             write_latency = cwl_sys_latency
         )
 
         # DFI Interface
-        self.dfi = dfi = DFIInterface(addressbits, bankbits, nranks, 4*databits, 4)
+        self.dfi = dfi = DFIInterface(addressbits, bankbits, nranks, 4 * databits, 4)
 
         bl8_chunk = Signal()
 

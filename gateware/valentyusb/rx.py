@@ -3,7 +3,7 @@ from eigen.fhdl.module import Module
 from eigen.fhdl.structure import Case, Cat, If, Signal
 
 from eigen.genlib.cdc import MultiReg
-from eigen.genlib.fifo import AsyncFIFO
+from eigen.genlib.fifo import _AsyncFIFO
 from eigen.genlib.fsm import FSM, NextState
 
 @ResetInserter()
@@ -618,7 +618,7 @@ class RxPipeline(Module):
         flag_start = Signal()
         flag_end = Signal()
         flag_valid = Signal()
-        payloadFifo = AsyncFIFO(8, 2)
+        payloadFifo = _AsyncFIFO(8, 2)
         self.submodules.payloadFifo = payloadFifo = ClockDomainsRenamer({"write":"usb_48", "read":"usb_12"})(payloadFifo)
 
         self.comb += [
@@ -629,7 +629,7 @@ class RxPipeline(Module):
             payloadFifo.re.eq(1),
         ]
 
-        flagsFifo = AsyncFIFO(2, 2)
+        flagsFifo = _AsyncFIFO(2, 2)
         self.submodules.flagsFifo = flagsFifo = ClockDomainsRenamer({"write":"usb_48", "read":"usb_12"})(flagsFifo)
 
         self.comb += [

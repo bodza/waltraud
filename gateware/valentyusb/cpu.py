@@ -4,7 +4,7 @@ from eigen.fhdl.specials import Memory
 from eigen.fhdl.structure import Case, Cat, If, ResetSignal, Signal
 
 from eigen.genlib.cdc import MultiReg, PulseSynchronizer
-from eigen.genlib.fifo import SyncFIFOBuffered
+from eigen.genlib.fifo import _SyncFIFOBuffered
 from eigen.genlib.fsm import FSM, NextState, NextValue
 from eigen.genlib.misc import chooser
 from eigen.genlib.record import Record
@@ -511,8 +511,7 @@ class TriEndpointInterface(Module, AutoCSR):
         ems = []
 
         # When the USB host sends a USB reset, set our address back to 0.
-        self.address = ResetInserter()(CSRStorage(
-            name="address",
+        self.address = ResetInserter()(CSRStorage("address",
             fields=[CSRField("addr", 7, description="Write the USB address from USB ``SET_ADDRESS`` packets.")],
             description="""
                 Sets the USB device address, in order to ignore packets
@@ -521,7 +520,7 @@ class TriEndpointInterface(Module, AutoCSR):
             """))
         self.comb += self.address.reset.eq(usb_core.usb_reset)
 
-        self.next_ev = CSRStatus(
+        self.next_ev = CSRStatus("next_ev",
             fields=[
                 CSRField("in", 1, description="``1`` if the next event is an ``IN`` event"),
                 CSRField("out", 1, description="``1`` if the next event is an ``OUT`` event"),
@@ -729,17 +728,17 @@ class SetupHandler(Module, AutoCSR):
         self.usb_reset = Signal()
 
         # Register Interface
-        self.data = data = CSRStatus(
+        self.data = data = CSRStatus("data",
             fields=[CSRField("data", 8, description="The next byte of ``SETUP`` data")],
             description="Data from the last ``SETUP`` transactions.  It will be 10 bytes long, because it will include the CRC16.  This is a FIFO, and the queue is advanced automatically."
         )
 
-        self.ctrl = ctrl = CSRStorage(
+        self.ctrl = ctrl = CSRStorage("ctrl",
             fields=[CSRField("reset", offset=5, description="Write a ``1`` here to reset the `SETUP` handler.", pulse=True), ],
             description="Controls for managing how to handle ``SETUP`` transactions."
         )
 
-        self.status = status = CSRStatus(
+        self.status = status = CSRStatus("status",
             fields=[
                 CSRField("epno", 4, description="The destination endpoint for the most recent SETUP token."),
                 CSRField("have", description="``1`` if there is data in the FIFO."),
@@ -766,7 +765,7 @@ class SetupHandler(Module, AutoCSR):
 
         class SetupHandlerInner(Module):
             def __init__(self):
-                self.submodules.data = buf = SyncFIFOBuffered(width=8, depth=10)
+                self.submodules.data = buf = _SyncFIFOBuffered(width=8, depth=10)
 
                 # Indicates which byte of `SETUP` data we're currently on.
                 data_byte = Signal(4)
@@ -858,9 +857,9 @@ class InHandler(Module, AutoCSR):
         # A list of endpoints that are stalled
         stall_status = Signal(16)
 
-        self.submodules.data_buf = buf = ResetInserter()(SyncFIFOBuffered(width=8, depth=64))
+        self.submodules.data_buf = buf = ResetInserter()(_SyncFIFOBuffered(width=8, depth=64))
 
-        self.data = CSRStorage(
+        self.data = CSRStorage("data",
             fields=[CSRField("data", 8, description="The next byte to add to the queue."), ],
             description="""
                 Each byte written into this register gets added to an outgoing FIFO.
@@ -870,7 +869,7 @@ class InHandler(Module, AutoCSR):
                 If you exceed this amount, the result is undefined."""
         )
 
-        self.ctrl = ctrl = CSRStorage(
+        self.ctrl = ctrl = CSRStorage("ctrl",
             fields=[
                 CSRField("epno", 4, description="The endpoint number for the transaction that is queued in the FIFO."),
                 CSRField("reset", offset=5, description="Write a ``1`` here to clear the contents of the FIFO.", pulse=True),
@@ -879,7 +878,7 @@ class InHandler(Module, AutoCSR):
             description="Enables transmission of data in response to ``IN`` tokens, or resets the contents of the FIFO."
         )
 
-        self.status = CSRStatus(
+        self.status = CSRStatus("status",
             fields=[
                 CSRField("idle", description="This value is ``1`` if the packet has finished transmitting."),
                 CSRField("have", offset=4, description="This value is ``0`` if the FIFO is empty."),
@@ -1012,9 +1011,9 @@ class OutHandler(Module, AutoCSR):
     """
     def __init__(self, usb_core):
 
-        self.submodules.data_buf = buf = ResetInserter()(SyncFIFOBuffered(width=8, depth=66))
+        self.submodules.data_buf = buf = ResetInserter()(_SyncFIFOBuffered(width=8, depth=66))
 
-        self.data = data = CSRStatus(
+        self.data = data = CSRStatus("data",
             fields=[
                 CSRField("data", 8, description="The top byte of the receive FIFO."),
             ],
@@ -1024,7 +1023,7 @@ class OutHandler(Module, AutoCSR):
                 Reading from this register advances the FIFO pointer."""
         )
 
-        self.ctrl = ctrl = CSRStorage(
+        self.ctrl = ctrl = CSRStorage("ctrl",
             fields=[
                 CSRField("epno", 4, description="The endpoint number to update the ``enable`` and ``status`` bits for."),
                 CSRField("enable", description="Write a ``1`` here to enable receiving data"),
@@ -1039,7 +1038,7 @@ class OutHandler(Module, AutoCSR):
                 Similarly, you can adjust the ``STALL`` state by setting or clearing the ``stall`` bit."""
         )
 
-        self.status = CSRStatus(
+        self.status = CSRStatus("status",
             fields=[
                 CSRField("epno", 4, description="The destination endpoint for the most recent ``OUT`` packet."),
                 CSRField("have", description="``1`` if there is data in the FIFO."),
@@ -1136,11 +1135,6 @@ class OutHandler(Module, AutoCSR):
                 ),
             ),
         ]
-        # These are useful for debugging
-        # self.enable_status = CSRStatus(8, description)
-        # self.comb += self.enable_status.status.eq(enable_status)
-        # self.stall_status = CSRStatus(8)
-        # self.comb += self.stall_status.status.eq(stall_status)
 
 # Hack the AutoCSR objects to enable access only via Module attributes.
 class CSRTransform(ModuleTransformer):
@@ -1207,18 +1201,18 @@ class CDCUsb(Module, AutoCSR):
         self.submodules.phy = phy = ClockDomainsRenamer("usb_12")(CDCUsbPHY(iobuf, debug=debug, vid=vid, pid=pid, product=product, manufacturer=manufacturer))
 
         # create interface for UART
-        self._rxtx = CSR(8)
-        self._txfull = CSRStatus()
-        self._rxempty = CSRStatus()
+        self._rxtx = CSR("rxtx", 8)
+        self._txfull = CSRStatus("txfull")
+        self._rxempty = CSRStatus("rxempty")
 
         self.submodules.ev = EventManager()
         self.ev.tx = EventSourceProcess()
         self.ev.rx = EventSourceProcess()
         self.ev.finalize()
 
-        self._tuning_word = CSRStorage(32, reset=0)
+        self._tuning_word = CSRStorage("tuning_word", 32, reset=0)
 
-        self._configured = CSR()
+        self._configured = CSR("configured")
 
         self.sink   = Endpoint([("data", 8)])
         self.source = Endpoint([("data", 8)])
@@ -1466,7 +1460,7 @@ class CDCUsbPHY(Module):
         mem.add(0xA121, 0x0000, [0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08]) # Get line_coding
         #mem.add(0xA120, 0x0000, [0x00,0x00]) # SerialState
 
-        out_buffer = self.specials.out_buffer = Memory(8, len(mem.contents), init=mem.contents)
+        out_buffer = self.specials.out_buffer = Memory("out_buffer", 8, len(mem.contents), mem.contents)
         self.specials.out_buffer_rd = out_buffer_rd = out_buffer.get_port(write_capable=False, clock_domain="usb_12")
         self.autocsr_exclude = ['out_buffer']
 

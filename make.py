@@ -12,7 +12,7 @@ from eigen.genlib.resetsync import AsyncResetSynchronizer
 
 from gateware import verilog
 
-from gateware.csr import AutoCSR, CSR, CSRBankArray, CSRBusInterconnectShared, CSRBusInterface, CSRStatus, CSRStorage
+from gateware.csr import AutoCSR, CSRBankArray, CSRBusInterconnectShared, CSRBusInterface, CSRStatus, CSRStorage
 from gateware.ev import EventManager, EventSourceProcess
 
 from gateware.litedram.core import LiteDRAMCore
@@ -550,14 +550,13 @@ class SoCController(Module, AutoCSR):
     def __init__(self, with_reset = True, with_scratch = True, with_errors = True):
 
         if with_reset:
-            self._reset = CSRStorage(1, description="""Write a ``1`` to this register to reset the SoC.""")
+            self._reset = CSRStorage("reset", 1, description="""Write a ``1`` to this register to reset the SoC.""")
         if with_scratch:
-            self._scratch = CSRStorage(32, reset=0x12345678, description="""
-                Use this register as a scratch space to verify that software read/write accesses
-                to the Wishbone/CSR bus are working correctly. The initial reset value of 0x1234578
-                can be used to verify endianness.""")
+            self._scratch = CSRStorage("scratch", 32, reset=0x12345678, description="""
+                Use this register as a scratch space to verify that software read/write accesses to the Wishbone/CSR bus are working correctly.
+                The initial reset value of 0x1234578 can be used to verify endianness.""")
         if with_errors:
-            self._bus_errors = CSRStatus(32, description="Total number of Wishbone bus errors (timeouts) since start.")
+            self._bus_errors = CSRStatus("bus_errors", 32, description="Total number of Wishbone bus errors (timeouts) since start.")
 
         # Reset
         if with_reset:
@@ -751,7 +750,7 @@ def _build_script(source, build_template, build_name, architecture, package, spe
 
 class InferedSDRIO(Module):
     def __init__(self, i, o, clk):
-        self.clock_domains.cd_sdrio = ClockDomain(reset_less=True)
+        self.clock_domains.cd_sdrio = ClockDomain("cd_sdrio", reset_less=True)
         self.comb += self.cd_sdrio.clk.eq(clk)
         self.sync.sdrio += o.eq(i)
 
@@ -1331,12 +1330,11 @@ class ECP5PLL(Module):
 
 class CRG(Module):
     def __init__(self, platform, sys_clk_freq):
-        self.clock_domains.cd_init     = ClockDomain()
-        self.clock_domains.cd_por      = ClockDomain(reset_less=True)
-        self.clock_domains.cd_sys      = ClockDomain()
-        self.clock_domains.cd_sys2x    = ClockDomain()
-        self.clock_domains.cd_sys2x_i  = ClockDomain(reset_less=True)
-        #self.clock_domains.cd_sys2x_eb = ClockDomain(reset_less=True)
+        self.clock_domains.cd_init     = ClockDomain("cd_init")
+        self.clock_domains.cd_por      = ClockDomain("cd_por", reset_less=True)
+        self.clock_domains.cd_sys      = ClockDomain("cd_sys")
+        self.clock_domains.cd_sys2x    = ClockDomain("cd_sys2x")
+        self.clock_domains.cd_sys2x_i  = ClockDomain("cd_sys2x_i", reset_less=True)
 
         self.stop  = Signal()
         self.reset = Signal()
@@ -1377,8 +1375,8 @@ class CRG(Module):
             AsyncResetSynchronizer(self.cd_sys2x, ~por_done | ~pll.locked | ~rst_n | self.reset),
         ]
 
-        self.clock_domains.cd_usb_48 = ClockDomain()
-        self.clock_domains.cd_usb_12 = ClockDomain()
+        self.clock_domains.cd_usb_48 = ClockDomain("cd_usb_48")
+        self.clock_domains.cd_usb_12 = ClockDomain("cd_usb_12")
 
         self.submodules.usb_pll = usb_pll = ECP5PLL()
         usb_pll.register_clkin(clk48, 48e6)
@@ -1422,17 +1420,15 @@ class Timer(Module, AutoCSR):
     """
 
     def __init__(self, width=32):
-        self._load = CSRStorage(width, description="""Load value when Timer is (re-)enabled.
-            In One-Shot mode, the value written to this register specifies the Timer's duration in
-            clock cycles.""")
-        self._reload = CSRStorage(width, description="""Reload value when Timer reaches ``0``.
-            In Periodic mode, the value written to this register specify the Timer's period in
-            clock cycles.""")
-        self._en = CSRStorage(1, description="""Enable flag of the Timer.
+        self._load = CSRStorage("load", width, description="""Load value when Timer is (re-)enabled.
+            In One-Shot mode, the value written to this register specifies the Timer's duration in clock cycles.""")
+        self._reload = CSRStorage("reload", width, description="""Reload value when Timer reaches ``0``.
+            In Periodic mode, the value written to this register specify the Timer's period in clock cycles.""")
+        self._en = CSRStorage("en", 1, description="""Enable flag of the Timer.
             Set this flag to ``1`` to enable/start the Timer.  Set to ``0`` to disable the Timer.""")
-        self._update_value = CSRStorage(1, description="""Update trigger for the current countdown value.
+        self._update_value = CSRStorage("update_value", 1, description="""Update trigger for the current countdown value.
             A write to this register latches the current countdown value to ``value`` register.""")
-        self._value = CSRStatus(width, description="""Latched countdown value.
+        self._value = CSRStatus("value", width, description="""Latched countdown value.
             This value is updated by writing to ``update_value``.""")
 
         self.submodules.ev = EventManager()

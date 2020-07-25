@@ -3,7 +3,6 @@ from operator import or_
 
 from eigen.fhdl.module import Module
 from eigen.fhdl.structure import DUID, If, Signal
-from eigen.fhdl.tracer import get_obj_var_name
 
 from eigen.util.misc import xdir
 
@@ -43,7 +42,7 @@ class _EventSource(DUID):
         self.pending = Signal()
         self.trigger = Signal()
         self.clear = Signal()
-        self.name = get_obj_var_name(name)
+        self.name = name or "evs"
         self.description = description
 
 class EventSourcePulse(Module, _EventSource):
@@ -114,9 +113,9 @@ class EventManager(Module, AutoCSR):
         sources_u = [v for k, v in xdir(self, True) if isinstance(v, _EventSource)]
         sources = sorted(sources_u, key=lambda x: x.duid)
         n = len(sources)
-        self.status = CSR(n)
-        self.pending = CSR(n)
-        self.enable = CSRStorage(n)
+        self.status = CSR("status", n)
+        self.pending = CSR("pending", n)
+        self.enable = CSRStorage("enable", n)
 
         for i, source in enumerate(sources):
             self.comb += [

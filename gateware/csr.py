@@ -5,7 +5,6 @@ from operator import or_
 from eigen.fhdl.module import Module
 from eigen.fhdl.specials import Memory
 from eigen.fhdl.structure import bits_for, Case, Cat, DUID, If, log2_int, Signal
-from eigen.fhdl.tracer import get_obj_var_name
 
 from eigen.genlib.misc import chooser
 from eigen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, Record, set_layout_parameters
@@ -39,9 +38,9 @@ CSR and memory attributes and return their list.
 """
 
 class _CSRBase(DUID):
-    def __init__(self, size, name):
+    def __init__(self, name, size):
         DUID.__init__(self)
-        self.name = get_obj_var_name(name)
+        self.name = name
         if self.name is None:
             raise ValueError("Cannot extract CSR name from code, need to specify.")
         self.size = size
@@ -56,7 +55,7 @@ class CSRConstant(DUID):
     def __init__(self, value, bits_sign=None, name=None):
         DUID.__init__(self)
         self.value = Constant(value, bits_sign)
-        self.name = get_obj_var_name(name)
+        self.name = name
         if self.name is None:
             raise ValueError("Cannot extract CSR name from code, need to specify.")
 
@@ -95,8 +94,8 @@ class CSR(_CSRBase):
         It is active for one cycle, after or during a read from the bus.
     """
 
-    def __init__(self, size=1, name=None):
-        _CSRBase.__init__(self, size, name)
+    def __init__(self, name, size=1):
+        _CSRBase.__init__(self, name, size)
         self.re = Signal(name=self.name + "_re")
         self.r  = Signal(self.size, name=self.name + "_r")
         self.we = Signal(name=self.name + "_we")
@@ -118,8 +117,8 @@ class CSR(_CSRBase):
         yield self.re.eq(0)
 
 class _CompoundCSR(_CSRBase, Module):
-    def __init__(self, size, name):
-        _CSRBase.__init__(self, size, name)
+    def __init__(self, name, size):
+        _CSRBase.__init__(self, name, size)
         self.simple_csrs = []
 
     def get_simple_csrs(self):
@@ -270,12 +269,12 @@ class CSRStatus(_CompoundCSR):
         The value of the CSRStatus register.
     """
 
-    def __init__(self, size=1, reset=0, fields=[], name=None, description=None):
+    def __init__(self, name, size=1, reset=0, fields=[], description=None):
         if fields != []:
             self.fields = CSRFieldAggregate(fields, CSRAccess.ReadOnly)
             size  = self.fields.get_size()
             reset = self.fields.get_reset()
-        _CompoundCSR.__init__(self, size, name)
+        _CompoundCSR.__init__(self, name, size)
         self.description = description
         self.status = Signal(self.size, reset=reset)
         self.we = Signal()
@@ -286,7 +285,7 @@ class CSRStatus(_CompoundCSR):
         nwords = (self.size + busword - 1)//busword
         for i in reversed(range(nwords)):
             nbits = min(self.size - i*busword, busword)
-            sc = CSR(nbits, self.name + str(i) if nwords > 1 else self.name)
+            sc = CSR(self.name + str(i) if nwords > 1 else self.name, nbits)
             self.comb += sc.w.eq(self.status[i*busword:i*busword+nbits])
             self.simple_csrs.append(sc)
         self.comb += self.we.eq(sc.we)
@@ -347,12 +346,12 @@ class CSRStorage(_CompoundCSR):
         ``write_from_dev == True``
     """
 
-    def __init__(self, size=1, reset=0, reset_less=False, fields=[], atomic_write=False, write_from_dev=False, name=None, description=None):
+    def __init__(self, name, size=1, reset=0, reset_less=False, fields=[], atomic_write=False, write_from_dev=False, description=None):
         if fields != []:
             self.fields = CSRFieldAggregate(fields, CSRAccess.ReadWrite)
             size  = self.fields.get_size()
             reset = self.fields.get_reset()
-        _CompoundCSR.__init__(self, size, name)
+        _CompoundCSR.__init__(self, name, size)
         self.description = description
         self.storage = Signal(self.size, reset=reset, reset_less=reset_less)
         self.atomic_write = atomic_write
@@ -374,7 +373,7 @@ class CSRStorage(_CompoundCSR):
             backstore = Signal(self.size - busword, name=self.name + "_backstore")
         for i in reversed(range(nwords)):
             nbits = min(self.size - i*busword, busword)
-            sc = CSR(nbits, self.name + str(i) if nwords else self.name)
+            sc = CSR(self.name + str(i) if nwords else self.name, nbits)
             self.simple_csrs.append(sc)
             lo = i*busword
             hi = lo+nbits
@@ -533,18 +532,18 @@ class CSRBusSRAM(Module):
         if bus is None:
             bus = CSRBusInterface()
         self.bus = bus
-        aligned_paging = paging//(soc_bus_data_width//8)
+        aligned_paging = paging // (soc_bus_data_width // 8)
         data_width = len(self.bus.dat_w)
         if isinstance(mem_or_size, Memory):
             mem = mem_or_size
         else:
-            mem = Memory(data_width, mem_or_size//(data_width//8), init=init)
-        mem_size = int(mem.width*mem.depth/8)
-        csrw_per_memw = (mem.width + data_width - 1)//data_width
+            mem = Memory("mem", data_width, mem_or_size // (data_width // 8), init)
+        mem_size = int(mem.width * mem.depth / 8)
+        csrw_per_memw = (mem.width + data_width - 1) // data_width
         word_bits = log2_int(csrw_per_memw)
-        page_bits = log2_int((mem.depth*csrw_per_memw + aligned_paging - 1)//aligned_paging, False)
+        page_bits = log2_int((mem.depth*csrw_per_memw + aligned_paging - 1) // aligned_paging, False)
         if page_bits:
-            self._page = CSRStorage(page_bits, name=mem.name_override + "_page")
+            self._page = CSRStorage(mem.name_override + "_page", page_bits)
             printf("WARNING: SRAM CSR memory will requires paged access.")
         else:
             self._page = None

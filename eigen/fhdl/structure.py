@@ -3,8 +3,6 @@ from collections import defaultdict
 from collections.abc import Iterable
 import re as _re
 
-from ..fhdl import tracer as _tracer
-
 from ..util.misc import flat_iteration
 
 def log2_int(n, need_pow2=True):
@@ -476,11 +474,11 @@ class Signal(_Value):
         if attr is None:
             attr = set()
 
+        self.name = name
         self.variable = variable  # deprecated
         self.reset = reset
         self.reset_less = reset_less
         self.name_override = name_override
-        self.backtrace = _tracer.trace_back(name)
         self.related = related
         self.attr = attr
 
@@ -490,7 +488,7 @@ class Signal(_Value):
         _Value.__setattr__(self, k, v)
 
     def __repr__(self):
-        return "<Signal " + (self.backtrace[-1][0] or "anonymous") + " at " + hex(id(self)) + ">"
+        return "<Signal " + (self.name_override or self.name or "anonymous") + " at " + hex(id(self)) + ">"
 
     @classmethod
     def like(cls, other, **kwargs):
@@ -771,8 +769,8 @@ class ClockDomain:
     rst : Signal or None, inout
         Reset signal for this domain. Can be driven or used to drive.
     """
-    def __init__(self, name=None, reset_less=False):
-        self.name = _tracer.get_obj_var_name(name)
+    def __init__(self, name, reset_less=False):
+        self.name = name
         if self.name is None:
             raise ValueError("Cannot extract clock domain name from code, need to specify.")
         if self.name.startswith("cd_"):

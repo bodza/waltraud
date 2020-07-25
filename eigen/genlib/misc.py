@@ -78,7 +78,7 @@ class WaitTimer(Module):
                 If(~self.done, count.eq(count - 1))
             ).Else(count.eq(count.reset))
 
-class BitSlip(Module):
+class _BitSlip(Module):
     def __init__(self, dw):
         self.i = Signal(dw)
         self.o = Signal(dw)

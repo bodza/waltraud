@@ -2,7 +2,6 @@ from functools import reduce
 from operator import or_
 
 from ..fhdl.structure import Cat, Signal
-from ..fhdl.tracer import get_obj_var_name
 
 (DIR_NONE, DIR_S_TO_M, DIR_M_TO_S) = range(3)
 
@@ -80,7 +79,7 @@ def layout_partial(layout, *elements):
 
 class Record:
     def __init__(self, layout, name=None, **kwargs):
-        self.name = get_obj_var_name(name, "")
+        self.name = name or "rec"
         self.layout = layout
 
         if self.name:
@@ -102,8 +101,7 @@ class Record:
             setattr(self, fname, finst)
 
     def eq(self, other):
-        return [getattr(self, f[0]).eq(getattr(other, f[0]))
-          for f in self.layout if hasattr(other, f[0])]
+        return [getattr(self, f[0]).eq(getattr(other, f[0])) for f in self.layout if hasattr(other, f[0])]
 
     def iter_flat(self):
         for f in self.layout:

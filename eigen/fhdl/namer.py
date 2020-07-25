@@ -17,7 +17,7 @@ def _build_tree(signals, basic_tree=None):
         current_b = basic_tree
         current = root
         current.signal_count += 1
-        for name, number in signal.backtrace:
+        for name, number in [("sig", 0)]: #signal.backtrace
             if basic_tree is None:
                 use_number = False
             else:
@@ -62,7 +62,7 @@ def _set_use_name(node, node_name=""):
 def _name_signal(tree, signal):
     elements = []
     treepos = tree
-    for step_name, step_n in signal.backtrace:
+    for step_name, step_n in [("sig", 0)]: #signal.backtrace
         try:
             treepos = treepos.children[(step_name, step_n)]
             use_number = True
@@ -97,7 +97,7 @@ def _list_conflicting_signals(pnd):
 def _set_use_number(tree, signals):
     for signal in signals:
         current = tree
-        for step_name, step_n in signal.backtrace:
+        for step_name, step_n in [("sig", 0)]: #signal.backtrace
             current = current.children[step_name]
             current.use_number = current.signal_count > len(current.numbers) and len(current.numbers) > 1
 

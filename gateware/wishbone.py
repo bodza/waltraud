@@ -284,7 +284,7 @@ class WishboneSRAM(Module):
             assert(mem_or_size.width <= bus_data_width)
             self.mem = mem_or_size
         else:
-            self.mem = Memory(bus_data_width, mem_or_size//(bus_data_width//8), init=init)
+            self.mem = Memory("mem", bus_data_width, mem_or_size // (bus_data_width // 8), init)
         if read_only is None:
             if hasattr(self.mem, "bus_read_only"):
                 read_only = self.mem.bus_read_only
@@ -297,8 +297,7 @@ class WishboneSRAM(Module):
         self.specials += self.mem, port
         # generate write enable signal
         if not read_only:
-            self.comb += [port.we[i].eq(self.bus.cyc & self.bus.stb & self.bus.we & self.bus.sel[i])
-                for i in range(bus_data_width//8)]
+            self.comb += [port.we[i].eq(self.bus.cyc & self.bus.stb & self.bus.we & self.bus.sel[i]) for i in range(bus_data_width//8)]
         # address and data
         self.comb += [
             port.adr.eq(self.bus.adr[:len(port.adr)]),
@@ -369,7 +368,7 @@ class WishboneCache(Module):
         word = Signal(wordbits) if wordbits else None
 
         # Data memory
-        data_mem = Memory(dw_to*2**wordbits, 2**linebits)
+        data_mem = Memory("data_mem", dw_to * 2**wordbits, 2**linebits)
         data_port = data_mem.get_port(write_capable=True, we_granularity=8)
         self.specials += data_mem, data_port
 
@@ -384,21 +383,21 @@ class WishboneCache(Module):
             data_port.adr.eq(adr_line),
             If(write_from_slave,
                 displacer(slave.dat_r, word, data_port.dat_w),
-                displacer(Replicate(1, dw_to//8), word, data_port.we)
+                displacer(Replicate(1, dw_to // 8), word, data_port.we)
             ).Else(
-                data_port.dat_w.eq(Replicate(master.dat_w, max(dw_to//dw_from, 1))),
+                data_port.dat_w.eq(Replicate(master.dat_w, max(dw_to // dw_from, 1))),
                 If(master.cyc & master.stb & master.we & master.ack,
                     displacer(master.sel, adr_offset, data_port.we, 2**offsetbits, reverse=reverse)
                 )
             ),
             chooser(data_port.dat_r, word, slave.dat_w),
-            slave.sel.eq(2**(dw_to//8)-1),
+            slave.sel.eq(2**(dw_to // 8) - 1),
             chooser(data_port.dat_r, adr_offset_r, master.dat_r, reverse=reverse)
         ]
 
         # Tag memory
         tag_layout = [("tag", tagbits), ("dirty", 1)]
-        tag_mem = Memory(layout_len(tag_layout), 2**linebits)
+        tag_mem = Memory("tag_mem", layout_len(tag_layout), 2**linebits)
         tag_port = tag_mem.get_port(write_capable=True)
         self.specials += tag_mem, tag_port
         tag_do = Record(tag_layout)

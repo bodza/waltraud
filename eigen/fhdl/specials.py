@@ -3,7 +3,6 @@ from operator import itemgetter
 from ..fhdl.module import Module
 from ..fhdl.structure import DUID, bits_for, ClockSignal, Constant, Signal, SPECIAL_INOUT, SPECIAL_INPUT, SPECIAL_OUTPUT, _Value, value_bits_sign, wrap
 from ..fhdl.tools import list_clock_domains_expr, list_signals, rename_clock_domain_expr
-from ..fhdl.tracer import get_obj_var_name
 
 from gateware.verilog import _printexpr
 
@@ -252,13 +251,13 @@ class _MemoryLocation(_Value):
         self.index = wrap(index)
 
 class Memory(Special):
-    def __init__(self, width, depth, init=None, name=None):
+    def __init__(self, name, width, depth, init=None):
         Special.__init__(self)
         self.width = width
         self.depth = depth
         self.ports = []
         self.init = init
-        self.name_override = get_obj_var_name(name, "mem")
+        self.name_override = name or "mem"
 
     def __getitem__(self, index):
         # simulation only

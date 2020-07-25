@@ -3,7 +3,7 @@ import math
 from eigen.fhdl.module import Module
 from eigen.fhdl.structure import Case, If, Signal
 
-from eigen.genlib import fifo
+from eigen.genlib.fifo import _AsyncFIFO, _AsyncFIFOBuffered, _SyncFIFO, _SyncFIFOBuffered
 from eigen.genlib.record import DIR_M_TO_S, DIR_S_TO_M, layout_len, Record
 
 def _make_m2s(layout):
@@ -107,7 +107,7 @@ class SyncFIFO(_FIFOWrapper):
         assert depth >= 0
         if depth >= 2:
             _FIFOWrapper.__init__(self,
-                fifo_class = fifo.SyncFIFOBuffered if buffered else fifo.SyncFIFO,
+                fifo_class = _SyncFIFOBuffered if buffered else _SyncFIFO,
                 layout     = layout,
                 depth      = depth)
             self.depth = self.fifo.depth
@@ -130,7 +130,7 @@ class AsyncFIFO(_FIFOWrapper):
     def __init__(self, layout, depth=4, buffered=False):
         assert depth >= 4
         _FIFOWrapper.__init__(self,
-            fifo_class = fifo.AsyncFIFOBuffered if buffered else fifo.AsyncFIFO,
+            fifo_class = _AsyncFIFOBuffered if buffered else _AsyncFIFO,
             layout     = layout,
             depth      = depth)
 

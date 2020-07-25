@@ -6,12 +6,12 @@ from gateware.csr import AutoCSR, CSRStatus, CSRStorage
 
 class GPIOIn(Module, AutoCSR):
     def __init__(self, signal):
-        self._in = CSRStatus(len(signal), description="GPIO Input(s) Status.")
+        self._in = CSRStatus("in", len(signal), description="GPIO Input(s) Status.")
         self.specials += MultiReg(signal, self._in.status)
 
 class GPIOOut(Module, AutoCSR):
     def __init__(self, signal):
-        self._out = CSRStorage(len(signal), description="GPIO Output(s) Control.")
+        self._out = CSRStorage("out", len(signal), description="GPIO Output(s) Control.")
         self.comb += signal.eq(self._out.storage)
 
 class GPIOInOut(Module):

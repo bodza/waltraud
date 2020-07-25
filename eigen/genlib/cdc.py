@@ -193,8 +193,8 @@ class ElasticBuffer(Module):
         self.dout = Signal(width)
 
         reset = Signal()
-        cd_write = ClockDomain()
-        cd_read = ClockDomain()
+        cd_write = ClockDomain("cd_write")
+        cd_read = ClockDomain("cd_read")
         self.comb += [
             cd_write.clk.eq(ClockSignal(idomain)),
             cd_read.clk.eq(ClockSignal(odomain)),
@@ -209,7 +209,7 @@ class ElasticBuffer(Module):
         wrpointer = Signal(max=depth, reset=depth//2)
         rdpointer = Signal(max=depth)
 
-        storage = Memory(width, depth)
+        storage = Memory("storage", width, depth)
         self.specials += storage
 
         wrport = storage.get_port(write_capable=True, clock_domain="write")
@@ -238,8 +238,8 @@ class Gearbox(Module):
         self.o = Signal(owidth, reset_less=True)
 
         rst = Signal()
-        cd_write = ClockDomain()
-        cd_read = ClockDomain()
+        cd_write = ClockDomain("cd_write")
+        cd_read = ClockDomain("cd_read")
         self.comb += [
             rst.eq(ResetSignal(idomain) | ResetSignal(odomain)),
             cd_write.clk.eq(ClockSignal(idomain)),
