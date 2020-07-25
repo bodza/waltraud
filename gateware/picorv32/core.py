@@ -1,10 +1,6 @@
 import os
 
-from eigen.fhdl.module import Module
-from eigen.fhdl.specials import Instance
-from eigen.fhdl.structure import ClockSignal, ResetSignal, Signal
-
-from gateware.wishbone import WishboneInterface
+from ..eigen import *
 
 CPU_VARIANTS = ["minimal", "standard"]
 

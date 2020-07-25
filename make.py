@@ -2,31 +2,11 @@
 
 import argparse, inspect, logging, math, os, struct, subprocess
 
-from eigen.fhdl.module import Module
-from eigen.fhdl.simplify import FullMemoryWE
-from eigen.fhdl.specials import Instance, Memory, Special, Tristate
-from eigen.fhdl.structure import ClockDomain, ClockSignal, _Fragment, If, log2_int, Signal, value_bits_sign
-
-from eigen.genlib.record import Record
-from eigen.genlib.resetsync import AsyncResetSynchronizer
-
-from gateware import verilog
-
-from gateware.csr import AutoCSR, CSRBankArray, CSRBusInterconnectShared, CSRBusInterface, CSRStatus, CSRStorage
-from gateware.ev import EventManager, EventSourceProcess
-
-from gateware.litedram.core import LiteDRAMCore
-from gateware.litedram.frontend import LiteDRAMWishbone2Native
-from gateware.litedram.init import get_sdram_phy_c_header
-from gateware.litedram.modules import MT41K64M16
-from gateware.litedram.phy import ECP5DDRPHY
-
+from gateware.eigen import *
+from gateware.eigen import _Fragment
+from gateware.litedram import ECP5DDRPHY, get_sdram_phy_c_header, LiteDRAMCore, LiteDRAMWishbone2Native, MT41K64M16
 from gateware.picorv32.core import PicoRV32
-
-from gateware.valentyusb.cpu import CDCUsb
-from gateware.valentyusb.io import IoBuf
-
-from gateware.wishbone import Wishbone2CSR, WishboneCache, WishboneConverter, WishboneInterconnectPointToPoint, WishboneInterconnectShared, WishboneInterface, WishboneSRAM
+from gateware.valentyusb import CDCUsb, IoBuf
 
 def _language_by_filename(name):
     extension = name.rsplit(".")[-1]
@@ -1513,7 +1493,7 @@ class OrangeCrab:
         return named_sc, named_pc
 
     def get_verilog(self, fragment, **kwargs):
-        return verilog.convert(fragment,
+        return convert(fragment,
             self.constraint_manager.get_io_signals(),
             create_clock_domains=False,
             special_overrides=self.toolchain.special_overrides,
