@@ -1,24 +1,9 @@
-import builtins, logging, math, operator, os, subprocess
+import builtins, math, operator, os, subprocess
 from collections import defaultdict, Iterable, OrderedDict
 from copy import copy
 from enum import IntEnum
 from functools import reduce
 from itertools import combinations
-from operator import itemgetter, or_
-import re as _re
-
-logging.basicConfig(level=logging.INFO)
-
-def colorer(s, color="bright"):
-    header  = {
-        "bright": "\x1b[1m",
-        "green":  "\x1b[32m",
-        "cyan":   "\x1b[36m",
-        "red":    "\x1b[31m",
-        "yellow": "\x1b[33m",
-        "underline": "\x1b[4m"}[color]
-    trailer = "\x1b[0m"
-    return header + str(s) + trailer
 
 def write_file(filename, contents):
     old_contents = None
@@ -102,7 +87,7 @@ def value_bits_sign(v):
     --------
     >>> value_bits_sign(Signal(8))
     8, False
-    >>> value_bits_sign(C(0xaa))
+    >>> value_bits_sign(Constant(0xaa))
     8, False
     """
     if isinstance(v, (Constant, Signal)):
@@ -176,13 +161,10 @@ class DUID:
 class _Value(DUID):
     """Base class for operands
 
-    Instances of `_Value` or its subclasses can be operands to
-    arithmetic, comparison, bitwise, and logic operators.
-    They can be assigned (:meth:`eq`) or indexed/sliced (using the usual
-    Python indexing and slicing notation).
+    Instances of `_Value` or its subclasses can be operands to arithmetic, comparison, bitwise, and logic operators.
+    They can be assigned (:meth:`eq`) or indexed/sliced (using the usual Python indexing and slicing notation).
 
-    Values created from integers have the minimum bit width to necessary to
-    represent the integer.
+    Values created from integers have the minimum bit width to necessary to represent the integer.
     """
     def __bool__(self):
         # Special case: Constants and Signals are part of a set or used as dictionary keys, and Python needs to check for equality.
@@ -318,25 +300,6 @@ class _Operator(_Value):
         self.op = op
         self.operands = [wrap(o) for o in operands]
 
-def Mux(sel, val1, val0):
-    """Multiplex between two values
-
-    Parameters
-    ----------
-    sel : _Value(1), in
-        Selector.
-    val1 : _Value(N), in
-    val0 : _Value(N), in
-        Input values.
-
-    Returns
-    -------
-    _Value(N), out
-        Output `_Value`. If `sel` is asserted, the Mux returns
-        `val1`, else `val0`.
-    """
-    return _Operator("m", [sel, val1, val0])
-
 class _Slice(_Value):
     def __init__(self, value, start, stop):
         _Value.__init__(self)
@@ -439,8 +402,6 @@ class Constant(_Value):
     def __hash__(self):
         return self.value
 
-C = Constant  # shorthand
-
 class Signal(_Value):
     """A `_Value` that can change
 
@@ -490,14 +451,9 @@ class Signal(_Value):
     related : Signal or None
     attr : set of synthesis attributes
     """
-    _name_re = _re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
     def __init__(self, bits_sign=None, name=None, variable=False, reset=0, reset_less=False, name_override=None, min=None, max=None, related=None, attr=None):
         _Value.__init__(self)
-
-        for n in [name, name_override]:
-            if n is not None and not self._name_re.match(n):
-                raise ValueError("Signal name {} is not a valid Python identifier".format(repr(n)))
 
         # determine number of bits and signedness
         if bits_sign is None:
@@ -758,23 +714,20 @@ class Array(list):
     """Addressable multiplexer
 
     An array is created from an iterable of values and indexed using the
-    usual Python simple indexing notation (no negative indices or
-    slices). It can be indexed by numeric constants, `_Value` s, or
-    `Signal` s.
+    usual Python simple indexing notation (no negative indices or slices).
+    It can be indexed by numeric constants, `_Value` s, or `Signal` s.
 
     The result of indexing the array is a proxy for the entry at the
     given index that can be used on either RHS or LHS of assignments.
 
     An array can be indexed multiple times.
 
-    Multidimensional arrays are supported by packing inner arrays into
-    outer arrays.
+    Multidimensional arrays are supported by packing inner arrays into outer arrays.
 
     Parameters
     ----------
     values : iterable of ints, _Values, Signals
-        Entries of the array. Each entry can be a numeric constant, a
-        `Signal` or a `Record`.
+        Entries of the array. Each entry can be a numeric constant, a `Signal` or a `Record`.
 
     Examples
     --------
@@ -997,7 +950,7 @@ class NodeVisitor:
             self.visit(statement)
 
     def visit_clock_domains(self, node):
-        for clockname, statements in sorted(node.items(), key=itemgetter(0)):
+        for clockname, statements in sorted(node.items(), key=operator.itemgetter(0)):
             self.visit(statements)
 
     def visit_ArrayProxy(self, node):
@@ -1103,7 +1056,7 @@ class NodeTransformer:
         return [self.visit(statement) for statement in node]
 
     def visit_clock_domains(self, node):
-        return {clockname: self.visit(statements) for clockname, statements in sorted(node.items(), key=itemgetter(0))}
+        return {clockname: self.visit(statements) for clockname, statements in sorted(node.items(), key=operator.itemgetter(0))}
 
     def visit_ArrayProxy(self, node):
         return _ArrayProxy([self.visit(choice) for choice in node.choices], self.visit(node.key))
@@ -1181,8 +1134,7 @@ def group_by_targets(sl):
                     targets |= old_targets
                     group += old_group
         groups.append((targets, group))
-    return [(targets, _resort_statements(stmts))
-        for targets, stmts in groups]
+    return [(targets, _resort_statements(stmts)) for targets, stmts in groups]
 
 def list_special_ios(f, ins, outs, inouts):
     r = set()
@@ -1321,27 +1273,6 @@ class _ComplexSliceLowerer(_Lowerer):
             node = _Slice(slice_proxy, node.start, node.stop)
         return NodeTransformer.visit_Slice(self, node)
 
-class _ComplexPartLowerer(_Lowerer):
-    def visit_Part(self, node):
-        value_proxy = node.value
-        offset_proxy = node.offset
-        if not isinstance(node.value, Signal):
-            value_proxy = Signal(value_bits_sign(node.value))
-            if self.target_context:
-                a = _Assign(node.value, value_proxy)
-            else:
-                a = _Assign(value_proxy, node.value)
-            self.comb.append(self.visit_Assign(a))
-        if not isinstance(node.offset, Signal):
-            offset_proxy = Signal(value_bits_sign(node.offset))
-            if self.target_context:
-                a = _Assign(node.offset, offset_proxy)
-            else:
-                a = _Assign(offset_proxy, node.offset)
-            self.comb.append(self.visit_Assign(a))
-        node = _Part(value_proxy, offset_proxy, node.width)
-        return NodeTransformer.visit_Part(self, node)
-
 def _apply_lowerer(l, f):
     f = l.visit(f)
     f.comb += l.comb
@@ -1365,9 +1296,6 @@ def lower_basics(f):
 
 def lower_complex_slices(f):
     return _apply_lowerer(_ComplexSliceLowerer(), f)
-
-def lower_complex_parts(f):
-    return _apply_lowerer(_ComplexPartLowerer(), f)
 
 class _ClockDomainRenamer(NodeVisitor):
     def __init__(self, old, new):
@@ -1481,10 +1409,6 @@ class _ModuleSync(_ModuleProxy):
     def __setattr__(self, name, value):
         if not isinstance(value, _ModuleSyncCD):
             raise AttributeError("Attempted to assign sync property - use += instead")
-
-# _ModuleForwardAttr enables user classes to do e.g.:
-# self.subm.foobar = SomeModule()
-# and then access the submodule with self.foobar.
 
 class _ModuleForwardAttr:
     def __setattr__(self, name, value):
@@ -1830,7 +1754,7 @@ class Instance(Special):
         if attr is None:
             attr = set()
         self.attr = attr
-        for k, v in sorted(kwargs.items(), key=itemgetter(0)):
+        for k, v in sorted(kwargs.items(), key=operator.itemgetter(0)):
             try:
                 item_type, item_name = k.split("_", maxsplit=1)
             except ValueError:
@@ -1932,12 +1856,6 @@ class _MemoryPort(Special):
     def emit_verilog(port, ns, add_data_file):
         return ""  # done by parent Memory object
 
-class _MemoryLocation(_Value):
-    def __init__(self, memory, index):
-        _Value.__init__(self)
-        self.memory = memory
-        self.index = wrap(index)
-
 class Memory(Special):
     def __init__(self, name, width, depth, init=None):
         Special.__init__(self)
@@ -1947,10 +1865,6 @@ class Memory(Special):
         self.init = init
         self.name_override = name or "mem"
 
-    def __getitem__(self, index):
-        # simulation only
-        return _MemoryLocation(self, index)
-
     def get_port(self, write_capable=False, async_read=False, has_re=False, we_granularity=0, mode=WRITE_FIRST, clock_domain="sys"):
         if we_granularity >= self.width:
             we_granularity = 0
@@ -1958,7 +1872,7 @@ class Memory(Special):
         dat_r = Signal(self.width)
         if write_capable:
             if we_granularity:
-                we = Signal(self.width//we_granularity)
+                we = Signal(self.width // we_granularity)
             else:
                 we = Signal()
             dat_w = Signal(self.width)
@@ -2002,7 +1916,7 @@ class Memory(Special):
             r += "always @(posedge " + gn(port.clock) + ") begin\n"
             if port.we is not None:
                 if port.we_granularity:
-                    n = memory.width//port.we_granularity
+                    n = memory.width // port.we_granularity
                     for i in range(n):
                         m = i*port.we_granularity
                         M = (i+1)*port.we_granularity-1
@@ -2066,7 +1980,7 @@ class FullMemoryWE(ModuleTransformer):
                 newspecials.add(orig)  # nothing to do
             else:
                 newmems = []
-                for i in range(orig.width//global_granularity):
+                for i in range(orig.width // global_granularity):
                     if orig.init is None:
                         newinit = None
                     else:
@@ -2080,7 +1994,7 @@ class FullMemoryWE(ModuleTransformer):
                             adr=port.adr,
 
                             dat_r=port.dat_r[i*global_granularity:(i+1)*global_granularity] if port.dat_r is not None else None,
-                            we=port.we[i*global_granularity//port_granularity] if port.we is not None else None,
+                            we=port.we[i*global_granularity // port_granularity] if port.we is not None else None,
                             dat_w=port.dat_w[i*global_granularity:(i+1)*global_granularity] if port.dat_w is not None else None,
 
                             async_read=port.async_read,
@@ -2095,152 +2009,6 @@ class FullMemoryWE(ModuleTransformer):
         f.specials = newspecials
         for oldmem in self.replacements.keys():
             f.specials -= set(oldmem.ports)
-
-class MemoryToArray(ModuleTransformer):
-    def __init__(self):
-        self.replacements = dict()
-
-    def transform_fragment(self, i, f):
-        newspecials = set()
-        processed_ports = set()
-
-        for mem in f.specials:
-            if not isinstance(mem, Memory):
-                newspecials.add(mem)
-                continue
-
-            storage = Array()
-            self.replacements[mem] = storage
-            init = []
-            if mem.init is not None:
-                init = mem.init
-            storage_name = lambda: "%s_data_%d" % (mem.name_override, len(storage))
-            for d in init:
-                mem_storage = Signal(mem.width, reset=d, name_override=storage_name())
-                storage.append(mem_storage)
-            for _ in range(mem.depth-len(init)):
-                mem_storage = Signal(mem.width, name_override=storage_name())
-                storage.append(mem_storage)
-
-            for port in mem.ports:
-                try:
-                    sync = f.sync[port.clock.cd]
-                except KeyError:
-                    sync = f.sync[port.clock.cd] = []
-
-                # read
-                if port.async_read:
-                    f.comb.append(port.dat_r.eq(storage[port.adr]))
-                else:
-                    if port.mode == WRITE_FIRST:
-                        adr_reg = Signal.like(port.adr)
-                        rd_stmt = adr_reg.eq(port.adr)
-                        f.comb.append(port.dat_r.eq(storage[adr_reg]))
-                    elif port.mode == NO_CHANGE and port.we is not None:
-                        rd_stmt = If(~port.we, port.dat_r.eq(storage[port.adr]))
-                    else: # NO_CHANGE without write capability reduces to READ_FIRST
-                        rd_stmt = port.dat_r.eq(storage[port.adr])
-                    if port.re is None:
-                        sync.append(rd_stmt)
-                    else:
-                        sync.append(If(port.re, rd_stmt))
-
-                # write
-                if port.we is not None:
-                    if port.we_granularity:
-                        n = mem.width//port.we_granularity
-                        for i in range(n):
-                            m = i*port.we_granularity
-                            M = (i+1)*port.we_granularity
-                            sync.append(If(port.we[i], storage[port.adr][m:M].eq(port.dat_w[m:M])))
-                    else:
-                        sync.append(If(port.we, storage[port.adr].eq(port.dat_w)))
-
-                processed_ports.add(port)
-
-        newspecials -= processed_ports
-        f.specials = newspecials
-
-class SplitMemory(ModuleTransformer):
-    """Split memories with depths that are not powers of two into smaller
-    power-of-two memories.
-
-    This prevents toolchains from rounding up and wasting resources."""
-
-    def transform_fragment(self, i, f):
-        old_specials, f.specials = f.specials, set()
-        old_ports = set()
-
-        for old in old_specials:
-            if not isinstance(old, Memory):
-                f.specials.add(old)
-                continue
-            try:
-                log2_int(old.depth, need_pow2=True)
-                f.specials.add(old)
-            except ValueError:
-                new, comb, sync = self._split_mem(old)
-                old_ports |= set(old.ports)
-                f.specials.update(new)
-                f.comb += comb
-                for cd, sy in sync.items():
-                    s = f.sync.setdefault(cd, [])
-                    s += sy
-        f.specials -= old_ports
-
-    def _split_mem(self, mem):
-        depths = [1 << i for i in range(log2_int(mem.depth, need_pow2=False)) if mem.depth & (1 << i)]
-        depths.reverse()
-        inits = None
-        if mem.init is not None:
-            inits = list(mem.init)
-        mems = []
-        for i, depth in enumerate(depths):
-            init = None
-            if inits is not None:
-                init = inits[:depth]
-                del inits[:depth]
-            name = "{}_part{}".format(mem.name_override, i)
-            mems.append(Memory(name, mem.width, depth, init))
-        ports = []
-        comb = []
-        sync = {}
-        for port in mem.ports:
-            p, c, s = self._split_port(port, mems)
-            ports += p
-            comb += c
-            sy = sync.setdefault(port.clock.cd, [])
-            sy += s
-        return mems + ports, comb, sync
-
-    def _split_port(self, port, mems):
-        ports = [mem.get_port(write_capable=port.we is not None,
-                              async_read=port.async_read,
-                              has_re=port.re is not None,
-                              we_granularity=port.we_granularity,
-                              mode=port.mode,
-                              clock_domain=port.clock.cd)
-                 for mem in mems]
-
-        sel = Signal(max=len(ports), reset=len(ports) - 1)
-        sel_r = Signal.like(sel)
-        eq = sel_r.eq(sel)
-        if port.re is not None:
-            eq = If(port.re, eq)
-        comb, sync = [], []
-        if port.async_read:
-            comb += [eq]
-        else:
-            sync += [eq]
-        comb += reversed([If(~port.adr[len(p.adr)], sel.eq(i)) for i, p in enumerate(ports)])
-        comb += [p.adr.eq(port.adr) for p in ports]
-        comb.append(port.dat_r.eq(Array([p.dat_r for p in ports])[sel_r]))
-        if port.we is not None:
-            comb.append(Array([p.we for p in ports])[sel].eq(port.we))
-            comb += [p.dat_w.eq(port.dat_w) for p in ports]
-        if port.re is not None:
-            comb += [p.re.eq(port.re) for p in ports]
-        return ports, comb, sync
 
 def split(v, *counts):
     r = []
@@ -2319,11 +2087,10 @@ class WaitTimer(Module):
                 If(~self.done, count.eq(count - 1))
             ).Else(count.eq(count.reset))
 
-class Encoder(Module):
+class OneHotEncoder(Module):
     """Encode one-hot to binary
 
-    If `n` is low, the `o` th bit in `i` is asserted, else none or
-    multiple bits are asserted.
+    If `n` is low, the `o` th bit in `i` is asserted, else none or multiple bits are asserted.
 
     Parameters
     ----------
@@ -2347,35 +2114,7 @@ class Encoder(Module):
         act["default"] = self.n.eq(1)
         self.comb += Case(self.i, act)
 
-class PriorityEncoder(Module):
-    """Priority encode requests to binary
-
-    If `n` is low, the `o` th bit in `i` is asserted and the bits below `o` are unasserted, else `o == 0`.
-    The LSB has priority.
-
-    Parameters
-    ----------
-    width : int
-        Bit width of the input
-
-    Attributes
-    ----------
-    i : Signal(width), in
-        Input requests
-    o : Signal(max=width), out
-        Encoded binary
-    n : Signal(1), out
-        Invalid, no input bits are asserted
-    """
-    def __init__(self, width):
-        self.i = Signal(width)  # one-hot, lsb has priority
-        self.o = Signal(max=max(2, width))  # binary
-        self.n = Signal()  # none
-        for j in range(width)[::-1]:  # last has priority
-            self.comb += If(self.i[j], self.o.eq(j))
-        self.comb += self.n.eq(self.i == 0)
-
-class Decoder(Module):
+class OneHotDecoder(Module):
     """Decode binary to one-hot
 
     If `n` is low, the `i` th bit in `o` is asserted, the others are not, else `o == 0`.
@@ -2401,9 +2140,6 @@ class Decoder(Module):
         act = dict((j, self.o.eq(1<<j)) for j in range(width))
         self.comb += Case(self.i, act)
         self.comb += If(self.n, self.o.eq(0))
-
-class PriorityDecoder(Decoder):
-    pass  # same
 
 (DIR_NONE, DIR_S_TO_M, DIR_M_TO_S) = range(3)
 
@@ -2453,30 +2189,6 @@ def layout_len(layout):
             r += fsize[0]
         else:
             r += fsize
-    return r
-
-def layout_get(layout, name):
-    for f in layout:
-        if f[0] == name:
-            return f
-    raise KeyError(name)
-
-def layout_partial(layout, *elements):
-    r = []
-    for path in elements:
-        path_s = path.split("/")
-        last = path_s.pop()
-        copy_ref = layout
-        insert_ref = r
-        for hop in path_s:
-            name, copy_ref = layout_get(copy_ref, hop)
-            try:
-                name, insert_ref = layout_get(insert_ref, hop)
-            except KeyError:
-                new_insert_ref = []
-                insert_ref.append((hop, new_insert_ref))
-                insert_ref = new_insert_ref
-        insert_ref.append(layout_get(copy_ref, last))
     return r
 
 class Record:
@@ -2550,7 +2262,7 @@ class Record:
                     if direction == DIR_M_TO_S:
                         r += [getattr(slave, field).eq(self_e) for slave in slaves]
                     elif direction == DIR_S_TO_M:
-                        r.append(self_e.eq(reduce(or_, [getattr(slave, field) for slave in slaves])))
+                        r.append(self_e.eq(reduce(operator.or_, [getattr(slave, field) for slave in slaves])))
                     else:
                         raise TypeError
             else:
@@ -2573,7 +2285,7 @@ class Record:
                     s_signal, s_direction = next(iter_slave)
                     assert(s_direction == DIR_S_TO_M)
                     s_signals.append(s_signal)
-                r.append(m_signal.eq(reduce(or_, s_signals)))
+                r.append(m_signal.eq(reduce(operator.or_, s_signals)))
             else:
                 raise TypeError
         return r
@@ -2587,7 +2299,6 @@ class Record:
 class AnonymousState:
     pass
 
-# do not use namedtuple here as it inherits tuple and the latter is used elsewhere in FHDL
 class NextState(_Statement):
     def __init__(self, state):
         self.state = state
@@ -2918,44 +2629,6 @@ class PulseSynchronizer(Module):
         sync_o += toggle_o_r.eq(toggle_o)
         self.comb += self.o.eq(toggle_o ^ toggle_o_r)
 
-class BusSynchronizer(Module):
-    """Clock domain transfer of several bits at once.
-
-    Ensures that all the bits form a single word that was present
-    synchronously in the input clock domain (unlike direct use of
-    ``MultiReg``)."""
-    def __init__(self, width, idomain, odomain, timeout=128):
-        self.i = Signal(width)
-        self.o = Signal(width, reset_less=True)
-
-        if width == 1:
-            self.specials += MultiReg(self.i, self.o, odomain)
-        else:
-            sync_i = getattr(self.sync, idomain)
-            sync_o = getattr(self.sync, odomain)
-
-            starter = Signal(reset=1)
-            sync_i += starter.eq(0)
-            self.submodules._ping = PulseSynchronizer(idomain, odomain)
-            # Extra flop on i->o to avoid race between data and request
-            ping_o = Signal()
-            sync_o += ping_o.eq(self._ping.o)
-            self.submodules._pong = PulseSynchronizer(odomain, idomain)
-            self.submodules._timeout = ClockDomainsRenamer(idomain)(
-                WaitTimer(timeout))
-            self.comb += [
-                self._timeout.wait.eq(~self._ping.i),
-                self._ping.i.eq(starter | self._pong.o | self._timeout.done),
-                self._pong.i.eq(ping_o)
-            ]
-
-            ibuffer = Signal(width, reset_less=True)
-            obuffer = Signal(width)  # registered reset_less by MultiReg
-            sync_i += If(self._pong.o, ibuffer.eq(self.i))
-            ibuffer.attr.add("no_retiming")
-            self.specials += MultiReg(ibuffer, obuffer, odomain)
-            sync_o += If(ping_o, self.o.eq(obuffer))
-
 class GrayCounter(Module):
     def __init__(self, width):
         self.ce = Signal()
@@ -3191,8 +2864,7 @@ class _AsyncFIFO(Module, _FIFOInterface):
         ]
 
 class _AsyncFIFOBuffered(Module, _FIFOInterface):
-    """Improves timing when it breaks due to sluggish clock-to-output
-    delay in e.g. Xilinx block RAMs. Increases latency by one cycle."""
+    """Improves timing when it breaks due to sluggish clock-to-output delay in block RAMs. Increases latency by one cycle."""
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
         self.submodules.fifo = fifo = _AsyncFIFO(width, depth)
@@ -3308,14 +2980,11 @@ class SyncFIFO(_FIFOWrapper):
     def __init__(self, layout, depth, buffered=False):
         assert depth >= 0
         if depth >= 2:
-            _FIFOWrapper.__init__(self,
-                fifo_class = _SyncFIFOBuffered if buffered else _SyncFIFO,
-                layout     = layout,
-                depth      = depth)
+            _FIFOWrapper.__init__(self, fifo_class=_SyncFIFOBuffered if buffered else _SyncFIFO, layout=layout, depth=depth)
             self.depth = self.fifo.depth
             self.level = self.fifo.level
         elif depth == 1:
-            buf = Buffer(layout)
+            buf = PipeValid(layout)
             self.submodules += buf
             self.sink   = buf.sink
             self.source = buf.source
@@ -3331,10 +3000,7 @@ class SyncFIFO(_FIFOWrapper):
 class AsyncFIFO(_FIFOWrapper):
     def __init__(self, layout, depth=4, buffered=False):
         assert depth >= 4
-        _FIFOWrapper.__init__(self,
-            fifo_class = _AsyncFIFOBuffered if buffered else _AsyncFIFO,
-            layout     = layout,
-            depth      = depth)
+        _FIFOWrapper.__init__(self, fifo_class=_AsyncFIFOBuffered if buffered else _AsyncFIFO, layout=layout, depth=depth)
 
 class _UpConverter(Module):
     def __init__(self, nbits_from, nbits_to, ratio, reverse):
@@ -3441,12 +3107,12 @@ def _get_converter_ratio(nbits_from, nbits_to):
         converter_cls = _DownConverter
         if nbits_from % nbits_to:
             raise ValueError("Ratio must be an int")
-        ratio = nbits_from//nbits_to
+        ratio = nbits_from // nbits_to
     elif nbits_from < nbits_to:
         converter_cls = _UpConverter
         if nbits_to % nbits_from:
             raise ValueError("Ratio must be an int")
-        ratio = nbits_to//nbits_from
+        ratio = nbits_to // nbits_from
     else:
         converter_cls = _IdentityConverter
         ratio = 1
@@ -3544,8 +3210,6 @@ class PipeValid(Module):
         ]
         self.comb += sink.ready.eq(~source.valid | source.ready)
 
-class Buffer(PipeValid): pass # FIXME: Replace Buffer with PipeValid in codebase?
-
 class Pipeline(Module):
     def __init__(self, *modules):
         n = len(modules)
@@ -3580,7 +3244,6 @@ which maps to the value at a single address on the target bus. Also provided
 are helper classes for dealing with values larger than the CSR buses data
 width.
 
- * ``CSRConstant``, for constant values.
  * ``CSRStatus``,   for providing information to the CPU.
  * ``CSRStorage``,  for allowing control via the CPU.
 
@@ -3604,24 +3267,6 @@ class _CSRBase(DUID):
         if self.name is None:
             raise ValueError("Cannot extract CSR name from code, need to specify.")
         self.size = size
-
-class CSRConstant(DUID):
-    """Register which contains a constant value.
-
-    Useful for providing information on how a HDL was instantiated to firmware
-    running on the device.
-    """
-
-    def __init__(self, value, bits_sign=None, name=None):
-        DUID.__init__(self)
-        self.value = Constant(value, bits_sign)
-        self.name = name
-        if self.name is None:
-            raise ValueError("Cannot extract CSR name from code, need to specify.")
-
-    def read(self):
-        """Read method for simulation."""
-        return self.value.value
 
 class CSR(_CSRBase):
     """Basic CSR register.
@@ -3676,7 +3321,7 @@ class CSR(_CSRBase):
         yield
         yield self.re.eq(0)
 
-class _CompoundCSR(_CSRBase, Module):
+class _CompoundCSR(_CSRBase):
     def __init__(self, name, size):
         _CSRBase.__init__(self, name, size)
         self.simple_csrs = []
@@ -3796,7 +3441,7 @@ class CSRFieldAggregate:
             reset |= (field.reset_value << field.offset)
         return reset
 
-class CSRStatus(_CompoundCSR):
+class CSRStatus(_CompoundCSR, Module):
     """Status Register.
 
     The ``CSRStatus`` class is meant to be used as a status register that is read-only from the CPU.
@@ -3842,9 +3487,9 @@ class CSRStatus(_CompoundCSR):
             self.comb += self.status[field.offset:field.offset + field.size].eq(getattr(self.fields, field.name))
 
     def do_finalize(self, busword):
-        nwords = (self.size + busword - 1)//busword
+        nwords = (self.size + busword - 1) // busword
         for i in reversed(range(nwords)):
-            nbits = min(self.size - i*busword, busword)
+            nbits = min(self.size - i * busword, busword)
             sc = CSR(self.name + str(i) if nwords > 1 else self.name, nbits)
             self.comb += sc.w.eq(self.status[i*busword:i*busword+nbits])
             self.simple_csrs.append(sc)
@@ -3858,7 +3503,7 @@ class CSRStatus(_CompoundCSR):
         yield self.we.eq(0)
         return value
 
-class CSRStorage(_CompoundCSR):
+class CSRStorage(_CompoundCSR, Module):
     """Control Register.
 
     The ``CSRStorage`` class provides a memory location that can be read and written by the CPU, and read and optionally written by the design.
@@ -3928,7 +3573,7 @@ class CSRStorage(_CompoundCSR):
                 self.comb += field_assign
 
     def do_finalize(self, busword):
-        nwords = (self.size + busword - 1)//busword
+        nwords = (self.size + busword - 1) // busword
         if nwords > 1 and self.atomic_write:
             backstore = Signal(self.size - busword, name=self.name + "_backstore")
         for i in reversed(range(nwords)):
@@ -4004,30 +3649,15 @@ def _make_gatherer(method, cls, prefix_cb):
 class AutoCSR:
     """MixIn to provide bus independent access to CSR registers.
 
-    A module can inherit from the ``AutoCSR`` class, which provides ``get_csrs``, ``get_memories``
-    and ``get_constants`` methods that scan for CSR and memory attributes and return their list.
+    A module can inherit from the ``AutoCSR`` class, which provides ``get_csrs`` and ``get_memories`` methods
+    that scan for CSR and memory attributes and return their list.
 
-    If the module has child objects that implement ``get_csrs``, ``get_memories`` or ``get_constants``,
-    they will be called by the``AutoCSR`` methods and their CSR and memories added to the lists returned,
+    If the module has child objects that implement ``get_csrs`` or ``get_memories``, they will be called by
+    the``AutoCSR`` methods and their CSR and memories added to the lists returned,
     with the child objects' names as prefixes.
     """
     get_memories = _make_gatherer("get_memories", Memory, memprefix)
     get_csrs = _make_gatherer("get_csrs", _CSRBase, csrprefix)
-    get_constants = _make_gatherer("get_constants", CSRConstant, csrprefix)
-
-class GenericBank(Module):
-    def __init__(self, description, busword):
-        # Turn description into simple CSRs and claim ownership of compound CSR modules
-        self.simple_csrs = []
-        for c in description:
-            if isinstance(c, CSR):
-                assert c.size <= busword
-                self.simple_csrs.append(c)
-            else:
-                c.finalize(busword)
-                self.simple_csrs += c.get_simple_csrs()
-                self.submodules += c
-        self.decode_bits = bits_for(len(self.simple_csrs)-1)
 
 """
 CSR-2 bus
@@ -4079,9 +3709,9 @@ class CSRBusInterconnectShared(Module):
     def __init__(self, masters, slaves):
         intermediate = CSRBusInterface.like(masters[0])
         self.comb += [
-            intermediate.adr.eq(reduce(or_, [masters[i].adr for i in range(len(masters))])),
-            intermediate.we.eq(reduce(or_, [masters[i].we for i in range(len(masters))])),
-            intermediate.dat_w.eq(reduce(or_, [masters[i].dat_w for i in range(len(masters))]))
+            intermediate.adr.eq(reduce(operator.or_, [masters[i].adr for i in range(len(masters))])),
+            intermediate.we.eq(reduce(operator.or_, [masters[i].we for i in range(len(masters))])),
+            intermediate.dat_w.eq(reduce(operator.or_, [masters[i].dat_w for i in range(len(masters))]))
         ]
         for i in range(len(masters)):
             self.comb += masters[i].dat_r.eq(intermediate.dat_r)
@@ -4160,14 +3790,25 @@ class CSRBusSRAM(Module):
         else:
             return [self._page]
 
-class CSRBank(GenericBank):
+class CSRBank(Module):
     def __init__(self, description, address=0, bus=None, paging=0x800, soc_bus_data_width=32):
         if bus is None:
             bus = CSRBusInterface()
         self.bus = bus
         aligned_paging = paging // (soc_bus_data_width // 8)
 
-        GenericBank.__init__(self, description, len(self.bus.dat_w))
+        busword = len(self.bus.dat_w)
+        # Turn description into simple CSRs and claim ownership of compound CSR modules
+        self.simple_csrs = []
+        for c in description:
+            if isinstance(c, CSR):
+                assert c.size <= busword
+                self.simple_csrs.append(c)
+            else:
+                c.finalize(busword)
+                self.simple_csrs += c.get_simple_csrs()
+                self.submodules += c
+        self.decode_bits = bits_for(len(self.simple_csrs)-1)
 
         sel = Signal()
         self.comb += sel.eq(self.bus.adr[log2_int(aligned_paging):] == address)
@@ -4201,7 +3842,6 @@ class CSRBankArray(Module):
     def scan(self, ifargs, ifkwargs):
         self.banks = []
         self.srams = []
-        self.constants = []
         for name, obj in xdir(self.source, True):
             if hasattr(obj, "get_csrs"):
                 csrs = obj.get_csrs()
@@ -4225,9 +3865,6 @@ class CSRBankArray(Module):
                     self.submodules += mmap
                     csrs += mmap.get_csrs()
                     self.srams.append((name, memory, mapaddr, mmap))
-            if hasattr(obj, "get_constants"):
-                for constant in obj.get_constants():
-                    self.constants.append((name, constant))
             if csrs:
                 mapaddr = self.address_map(name, None)
                 if mapaddr is None:
@@ -4366,7 +4003,7 @@ class EventManager(Module, AutoCSR):
             ]
 
         irqs = [self.pending.w[i] & self.enable.storage[i] for i in range(n)]
-        self.comb += self.irq.eq(reduce(or_, irqs))
+        self.comb += self.irq.eq(reduce(operator.or_, irqs))
 
     def __setattr__(self, name, value):
         object.__setattr__(self, name, value)
@@ -4380,7 +4017,7 @@ class SharedIRQ(Module):
 
     def __init__(self, *event_managers):
         self.irq = Signal()
-        self.comb += self.irq.eq(reduce(or_, [ev.irq for ev in event_managers]))
+        self.comb += self.irq.eq(reduce(operator.or_, [ev.irq for ev in event_managers]))
 
 class GPIOIn(Module, AutoCSR):
     def __init__(self, signal):
@@ -4531,6 +4168,7 @@ class WishboneDecoder(Module):
     # 1) wishbone.Slave reference.
     # register adds flip-flops after the address comparators. Improves timing,
     # but breaks Wishbone combinatorial feedback.
+
     def __init__(self, master, slaves, register=False):
         ns = len(slaves)
         slave_sel = Signal(ns)
@@ -4556,13 +4194,13 @@ class WishboneDecoder(Module):
 
         # generate master ack (resp. err) by ORing all slave acks (resp. errs)
         self.comb += [
-            master.ack.eq(reduce(or_, [slave[1].ack for slave in slaves])),
-            master.err.eq(reduce(or_, [slave[1].err for slave in slaves]))
+            master.ack.eq(reduce(operator.or_, [slave[1].ack for slave in slaves])),
+            master.err.eq(reduce(operator.or_, [slave[1].err for slave in slaves]))
         ]
 
         # mux (1-hot) slave data return
         masked = [Replicate(slave_sel_r[i], len(master.dat_r)) & slaves[i][1].dat_r for i in range(ns)]
-        self.comb += master.dat_r.eq(reduce(or_, masked))
+        self.comb += master.dat_r.eq(reduce(operator.or_, masked))
 
 class WishboneInterconnectShared(Module):
     def __init__(self, masters, slaves, register=False, timeout_cycles=1e6):
@@ -4600,7 +4238,7 @@ class WishboneDownConverter(Module):
     def __init__(self, master, slave):
         dw_from = len(master.dat_r)
         dw_to   = len(slave.dat_w)
-        ratio   = dw_from//dw_to
+        ratio   = dw_from // dw_to
 
         skip    = Signal()
         counter = Signal(max=ratio)
@@ -4618,7 +4256,7 @@ class WishboneDownConverter(Module):
         )
         fsm.act("CONVERT",
             slave.adr.eq(Cat(counter, master.adr)),
-            Case(counter, {i: slave.sel.eq(master.sel[i*dw_to//8:]) for i in range(ratio)}),
+            Case(counter, {i: slave.sel.eq(master.sel[i*dw_to // 8:]) for i in range(ratio)}),
             If(master.stb & master.cyc,
                 skip.eq(slave.sel == 0),
                 slave.we.eq(master.we),
@@ -4685,7 +4323,7 @@ class WishboneSRAM(Module):
         self.specials += self.mem, port
         # generate write enable signal
         if not read_only:
-            self.comb += [port.we[i].eq(self.bus.cyc & self.bus.stb & self.bus.we & self.bus.sel[i]) for i in range(bus_data_width//8)]
+            self.comb += [port.we[i].eq(self.bus.cyc & self.bus.stb & self.bus.we & self.bus.sel[i]) for i in range(bus_data_width // 8)]
         # address and data
         self.comb += [
             port.adr.eq(self.bus.adr[:len(port.adr)]),
@@ -4747,11 +4385,11 @@ class WishboneCache(Module):
 
         # Split address:
         # TAG | LINE NUMBER | LINE OFFSET
-        offsetbits = log2_int(max(dw_to//dw_from, 1))
+        offsetbits = log2_int(max(dw_to // dw_from, 1))
         addressbits = len(slave.adr) + offsetbits
         linebits = log2_int(cachesize) - offsetbits
         tagbits = addressbits - linebits
-        wordbits = log2_int(max(dw_from//dw_to, 1))
+        wordbits = log2_int(max(dw_from // dw_to, 1))
         adr_offset, adr_line, adr_tag = split(master.adr, offsetbits, linebits, tagbits)
         word = Signal(wordbits) if wordbits else None
 
@@ -4804,8 +4442,7 @@ class WishboneCache(Module):
         else:
             self.comb += slave.adr.eq(Cat(adr_line, tag_do.tag))
 
-        # slave word computation, word_clr and word_inc will be simplified
-        # at synthesis when wordbits=0
+        # slave word computation, word_clr and word_inc will be simplified at synthesis when wordbits=0
         word_clr = Signal()
         word_inc = Signal()
         if word is not None:
@@ -5106,56 +4743,6 @@ def _printheader(f, ios, name, ns, attr_translate, reg_initialization):
     r += "\n"
     return r
 
-def _printcomb_simulation(f, ns, display_run, dummy_signal, blocking_assign):
-    r = ""
-    if f.comb:
-        if dummy_signal:
-            # Generate a dummy event to get the simulator to run the combinatorial process once at the beginning.
-            syn_off = "// synthesis translate_off\n"
-            syn_on = "// synthesis translate_on\n"
-            dummy_s = Signal(name_override="dummy_s")
-            r += syn_off
-            r += "reg " + _printsig(ns, dummy_s) + ";\n"
-            r += "initial " + ns.get_name(dummy_s) + " <= 1'd0;\n"
-            r += syn_on
-
-        target_stmt_map = defaultdict(list)
-
-        for statement in flat_iteration(f.comb):
-            targets = list_targets(statement)
-            for t in targets:
-                target_stmt_map[t].append(statement)
-
-        groups = group_by_targets(f.comb)
-
-        for n, (t, stmts) in enumerate(target_stmt_map.items()):
-            assert isinstance(t, Signal)
-            if len(stmts) == 1 and isinstance(stmts[0], _Assign):
-                r += "assign " + _printnode(ns, _AT_BLOCKING, 0, stmts[0])
-            else:
-                if dummy_signal:
-                    dummy_d = Signal(name_override="dummy_d")
-                    r += "\n" + syn_off
-                    r += "reg " + _printsig(ns, dummy_d) + ";\n"
-                    r += syn_on
-
-                r += "always @(*) begin\n"
-                if display_run:
-                    r += "\t$display(\"Running comb block #" + str(n) + "\");\n"
-                if blocking_assign:
-                    r += "\t" + ns.get_name(t) + " = " + _printexpr(ns, t.reset)[0] + ";\n"
-                    r += _printnode(ns, _AT_BLOCKING, 1, stmts, t)
-                else:
-                    r += "\t" + ns.get_name(t) + " <= " + _printexpr(ns, t.reset)[0] + ";\n"
-                    r += _printnode(ns, _AT_NONBLOCKING, 1, stmts, t)
-                if dummy_signal:
-                    r += syn_off
-                    r += "\t" + ns.get_name(dummy_d) + " = " + ns.get_name(dummy_s) + ";\n"
-                    r += syn_on
-                r += "end\n"
-    r += "\n"
-    return r
-
 def _printcomb_regular(f, ns, blocking_assign):
     r = ""
     if f.comb:
@@ -5180,7 +4767,7 @@ def _printcomb_regular(f, ns, blocking_assign):
 
 def _printsync(f, ns):
     r = ""
-    for k, v in sorted(f.sync.items(), key=itemgetter(0)):
+    for k, v in sorted(f.sync.items(), key=operator.itemgetter(0)):
         r += "always @(posedge " + ns.get_name(f.clock_domains[k].clk) + ") begin\n"
         r += _printnode(ns, _AT_SIGNAL, 1, v)
         r += "end\n\n"
@@ -5221,12 +4808,6 @@ class ConvOutput:
             i += 1
         self.data_files[filename] = content
         return filename
-
-    def __str__(self):
-        r = self.main_source + "\n"
-        for filename, content in sorted(self.data_files.items(), key=itemgetter(0)):
-            r += filename + ":\n" + content
-        return r
 
     def write(self, main_filename):
         with open(main_filename, "w") as f:
@@ -5397,8 +4978,8 @@ def _build_pnd(signals):
     return pnd
 
 class Namespace:
-    def __init__(self, pnd, reserved_keywords=set()):
-        self.counts = {k: 1 for k in reserved_keywords}
+    def __init__(self, pnd):
+        self.counts = {k: 1 for k in _reserved_keywords}
         self.sigs = {}
         self.pnd = pnd
         self.clock_domains = dict()
@@ -5409,7 +4990,7 @@ class Namespace:
         if isinstance(sig, ResetSignal):
             sig = self.clock_domains[sig.cd].rst
             if sig is None:
-                raise ValueError("Attempted to obtain name of non-existent reset signal of domain "+sig.cd)
+                raise ValueError("Attempted to obtain name of non-existent reset signal of domain " + sig.cd)
 
         if sig.name_override is not None:
             sig_name = sig.name_override
@@ -5429,24 +5010,16 @@ class Namespace:
         else:
             return sig_name
 
-def build_namespace(signals, reserved_keywords=set()):
+def build_namespace(signals):
     pnd = _build_pnd(signals)
-    ns = Namespace(pnd, reserved_keywords)
+    ns = Namespace(pnd)
     # register signals with name_override
     swno = {signal for signal in signals if signal.name_override is not None}
     for signal in sorted(swno, key=lambda x: x.duid):
         ns.get_name(signal)
     return ns
 
-def convert(f, ios=None, name="top",
-  special_overrides=dict(),
-  attr_translate=DummyAttrTranslate(),
-  create_clock_domains=True,
-  display_run=False,
-  reg_initialization=True,
-  dummy_signal=True,
-  blocking_assign=False,
-  regular_comb=True):
+def to_verilog(f, ios=None, name="top", special_overrides=dict(), attr_translate=DummyAttrTranslate(), reg_initialization=True, blocking_assign=False):
     r = ConvOutput()
     if not isinstance(f, _Fragment):
         f = f.get_fragment()
@@ -5454,18 +5027,7 @@ def convert(f, ios=None, name="top",
         ios = set()
 
     for cd_name in sorted(list_clock_domains(f)):
-        try:
-            f.clock_domains[cd_name]
-        except KeyError:
-            if create_clock_domains:
-                cd = ClockDomain(cd_name)
-                f.clock_domains.append(cd)
-                ios |= {cd.clk, cd.rst}
-            else:
-                print("available clock domains:")
-                for f in f.clock_domains:
-                    print(f.name)
-                raise KeyError("Unresolved clock domain: '" + cd_name + "'")
+        f.clock_domains[cd_name]
 
     f = lower_complex_slices(f)
     insert_resets(f)
@@ -5473,52 +5035,31 @@ def convert(f, ios=None, name="top",
     f, lowered_specials = lower_specials(special_overrides, f)
     f = lower_basics(f)
 
-    ns = build_namespace(list_signals(f) | list_special_ios(f, True, True, True) | ios, _reserved_keywords)
+    ns = build_namespace(list_signals(f) | list_special_ios(f, True, True, True) | ios)
     ns.clock_domains = f.clock_domains
     r.ns = ns
 
-    src = ""
-    src += _printheader(f, ios, name, ns, attr_translate, reg_initialization=reg_initialization)
-    if regular_comb:
-        src += _printcomb_regular(f, ns, blocking_assign=blocking_assign)
-    else:
-        src += _printcomb_simulation(f, ns, display_run=display_run, dummy_signal=dummy_signal, blocking_assign=blocking_assign)
-    src += _printsync(f, ns)
-    src += _printspecials(special_overrides, f.specials - lowered_specials,
-        ns, r.add_data_file, attr_translate)
-    src += "endmodule\n"
-    r.set_main_source(src)
+    s = ""
+    s += _printheader(f, ios, name, ns, attr_translate, reg_initialization=reg_initialization)
+    s += _printcomb_regular(f, ns, blocking_assign=blocking_assign)
+    s += _printsync(f, ns)
+    s += _printspecials(special_overrides, f.specials - lowered_specials, ns, r.add_data_file, attr_translate)
+    s += "endmodule\n"
+    r.set_main_source(s)
 
     return r
 
-burst_lengths = {
-    "SDR":   1,
-    "DDR":   4,
-    "LPDDR": 4,
-    "DDR2":  4,
-    "DDR3":  8,
-    "DDR4":  8
-}
-
 def get_cl_cw(memtype, tck):
     f_to_cl_cwl = OrderedDict()
-    if memtype == "DDR2":
-        f_to_cl_cwl[400e6]  = (3, 2)
-        f_to_cl_cwl[533e6]  = (4, 3)
-        f_to_cl_cwl[677e6]  = (5, 4)
-        f_to_cl_cwl[800e6]  = (6, 5)
-        f_to_cl_cwl[1066e6] = (7, 5)
-    elif memtype == "DDR3":
+    if memtype == "DDR3":
         f_to_cl_cwl[800e6]  = ( 6, 5)
         f_to_cl_cwl[1066e6] = ( 7, 6)
         f_to_cl_cwl[1333e6] = (10, 7)
         f_to_cl_cwl[1600e6] = (11, 8)
-    elif memtype == "DDR4":
-        f_to_cl_cwl[1600e6] = (11,  9)
     else:
         raise ValueError
     for f, (cl, cwl) in f_to_cl_cwl.items():
-        if tck >= 2/f:
+        if tck >= 2 / f:
             return cl, cwl
     raise ValueError
 
@@ -5526,31 +5067,9 @@ def get_sys_latency(nphases, cas_latency):
     return math.ceil(cas_latency/nphases)
 
 def get_sys_phases(nphases, sys_latency, cas_latency):
-    dat_phase = sys_latency*nphases - cas_latency
-    cmd_phase = (dat_phase - 1)%nphases
+    dat_phase = sys_latency * nphases - cas_latency
+    cmd_phase = (dat_phase - 1) % nphases
     return cmd_phase, dat_phase
-
-class PHYPadsReducer:
-    """PHY Pads Reducer
-
-    Reduce DRAM pads to only use specific modules.
-
-    For testing purposes, we often need to use only some of the DRAM modules. PHYPadsReducer allows
-    selecting specific modules and avoid re-definining dram pins in the Platform for this.
-    """
-    def __init__(self, pads, modules):
-        self.pads    = pads
-        self.modules = modules
-
-    def __getattr__(self, name):
-        if name in ["dq"]:
-            return Array([getattr(self.pads, name)[8*i + j]
-                for i in self.modules
-                for j in range(8)])
-        if name in ["dm", "dqs", "dqs_p", "dqs_n"]:
-            return Array([getattr(self.pads, name)[i] for i in self.modules])
-        else:
-            return getattr(self.pads, name)
 
 class PHYPadsCombiner:
     """PHY Pads Combiner
@@ -5574,9 +5093,7 @@ class PHYPadsCombiner:
 
     def __getattr__(self, name):
         if name in ["dm", "dq", "dqs", "dqs_p", "dqs_n"]:
-            return Array([getattr(self.groups[j], name)[i]
-                for i in range(len(getattr(self.groups[0], name)))
-                for j in range(len(self.groups))])
+            return Array([getattr(self.groups[j], name)[i] for i in range(len(getattr(self.groups[0], name))) for j in range(len(self.groups))])
         else:
             return getattr(self.groups[self.sel], name)
 
@@ -5598,32 +5115,6 @@ class BitSlip(Module):
             cases[i] = self.o.eq(r[i:dw+i])
         self.comb += Case(value, cases)
 
-class DQSPattern(Module):
-    def __init__(self, preamble=None, postamble=None, wlevel_en=0, wlevel_strobe=0, register=False):
-        self.preamble  = Signal() if preamble  is None else preamble
-        self.postamble = Signal() if postamble is None else postamble
-        self.o = Signal(8)
-
-        self.comb += [
-            self.o.eq(0b01010101),
-            If(self.preamble,
-                self.o.eq(0b00010101)
-            ),
-            If(self.postamble,
-                self.o.eq(0b01010100)
-            ),
-            If(wlevel_en,
-                self.o.eq(0b00000000),
-                If(wlevel_strobe,
-                    self.o.eq(0b00000001)
-                )
-            )
-        ]
-        if register:
-            o = Signal.like(self.o)
-            self.sync += o.eq(self.o)
-            self.o = o
-
 class Settings:
     def set_attributes(self, attributes):
         for k, v in attributes.items():
@@ -5637,21 +5128,6 @@ class PhySettings(Settings):
                  cl, read_latency, write_latency, nranks=1, cwl=None):
         self.set_attributes(locals())
         self.cwl = cl if cwl is None else cwl
-        self.is_rdimm = False
-
-    # Optional DDR3/DDR4 electrical settings:
-    # rtt_nom: Non-Writes on-die termination impedance
-    # rtt_wr: Writes on-die termination impedance
-    # ron: Output driver impedance
-    def add_electrical_settings(self, rtt_nom, rtt_wr, ron):
-        assert self.memtype in ["DDR3", "DDR4"]
-        self.set_attributes(locals())
-
-    # Optional RDIMM configuration
-    def set_rdimm(self, tck, rcd_pll_bypass, rcd_ca_cs_drive, rcd_odt_cke_drive, rcd_clk_drive):
-        assert self.memtype == "DDR4"
-        self.is_rdimm = True
-        self.set_attributes(locals())
 
 class GeomSettings(Settings):
     def __init__(self, bankbits, rowbits, colbits):
@@ -5676,9 +5152,9 @@ def cmd_layout(address_width):
 
 def data_layout(data_width):
     return [
-        ("wdata",       data_width, DIR_M_TO_S),
-        ("wdata_we", data_width//8, DIR_M_TO_S),
-        ("rdata",       data_width, DIR_S_TO_M)
+        ("wdata",    data_width,      DIR_M_TO_S),
+        ("wdata_we", data_width // 8, DIR_M_TO_S),
+        ("rdata",    data_width,      DIR_S_TO_M)
     ]
 
 def cmd_description(address_width):
@@ -5690,7 +5166,7 @@ def cmd_description(address_width):
 def wdata_description(data_width):
     return [
         ("data", data_width),
-        ("we",   data_width//8)
+        ("we",   data_width // 8)
     ]
 
 def rdata_description(data_width):
@@ -5757,14 +5233,6 @@ class LiteDRAMNativePort(Settings):
         else:
             return self.cmd.addr[:cba_shift]
 
-class LiteDRAMNativeWritePort(LiteDRAMNativePort):
-    def __init__(self, *args, **kwargs):
-        LiteDRAMNativePort.__init__(self, "write", *args, **kwargs)
-
-class LiteDRAMNativeReadPort(LiteDRAMNativePort):
-    def __init__(self, *args, **kwargs):
-        LiteDRAMNativePort.__init__(self, "read", *args, **kwargs)
-
 class tXXDController(Module):
     def __init__(self, txxd):
         self.valid = valid = Signal()
@@ -5824,9 +5292,9 @@ def phase_cmd_description(addressbits, bankbits, nranks):
 
 def phase_wrdata_description(databits):
     return [
-        ("wrdata",         databits, DIR_M_TO_S),
-        ("wrdata_en",             1, DIR_M_TO_S),
-        ("wrdata_mask", databits//8, DIR_M_TO_S)
+        ("wrdata",      databits,      DIR_M_TO_S),
+        ("wrdata_en",               1, DIR_M_TO_S),
+        ("wrdata_mask", databits // 8, DIR_M_TO_S)
     ]
 
 def phase_rddata_description(databits):
@@ -5870,10 +5338,6 @@ class DFIInterface(Record):
                         suffix = ""
                     r.append(("dfi_" + field + suffix, getattr(phase, field)))
         return r
-
-class Interconnect(Module):
-    def __init__(self, master, slave):
-        self.comb += master.connect(slave)
 
 # 1:2 frequency-ratio DDR3 PHY for Lattice's ECP5
 # DDR3: 800 MT/s
@@ -5938,13 +5402,13 @@ class ECP5DDRPHY(Module, AutoCSR):
     def __init__(self, pads, sys_clk_freq=100e6):
         pads        = PHYPadsCombiner(pads)
         memtype     = "DDR3"
-        tck         = 2/(2*2*sys_clk_freq)
+        tck         = 2 / (2 * 2 * sys_clk_freq)
         addressbits = len(pads.a)
         bankbits    = len(pads.ba)
         nranks      = 1 if not hasattr(pads, "cs_n") else len(pads.cs_n)
         databits    = len(pads.dq)
         nphases     = 2
-        assert databits%8 == 0
+        assert databits % 8 == 0
 
         # Init
         self.submodules.init = ECP5DDRPHYInit()
@@ -6058,7 +5522,7 @@ class ECP5DDRPHY(Module, AutoCSR):
         dqs_oe        = Signal()
         dqs_postamble = Signal()
         dqs_preamble  = Signal()
-        for i in range(databits//8):
+        for i in range(databits // 8):
             # DQSBUFM
             dqs_i   = Signal()
             dqsr90  = Signal()
@@ -6126,15 +5590,15 @@ class ECP5DDRPHY(Module, AutoCSR):
             dm_o_data_d     = Signal(8)
             dm_o_data_muxed = Signal(4)
             self.comb += dm_o_data.eq(Cat(
-                dfi.phases[0].wrdata_mask[0*databits//8+i],
-                dfi.phases[0].wrdata_mask[1*databits//8+i],
-                dfi.phases[0].wrdata_mask[2*databits//8+i],
-                dfi.phases[0].wrdata_mask[3*databits//8+i],
+                dfi.phases[0].wrdata_mask[0 * databits // 8 + i],
+                dfi.phases[0].wrdata_mask[1 * databits // 8 + i],
+                dfi.phases[0].wrdata_mask[2 * databits // 8 + i],
+                dfi.phases[0].wrdata_mask[3 * databits // 8 + i],
 
-                dfi.phases[1].wrdata_mask[0*databits//8+i],
-                dfi.phases[1].wrdata_mask[1*databits//8+i],
-                dfi.phases[1].wrdata_mask[2*databits//8+i],
-                dfi.phases[1].wrdata_mask[3*databits//8+i]),
+                dfi.phases[1].wrdata_mask[0 * databits // 8 + i],
+                dfi.phases[1].wrdata_mask[1 * databits // 8 + i],
+                dfi.phases[1].wrdata_mask[2 * databits // 8 + i],
+                dfi.phases[1].wrdata_mask[3 * databits // 8 + i]),
             )
             self.sync += dm_o_data_d.eq(dm_o_data)
             dm_bl8_cases = {}
@@ -6568,33 +6032,33 @@ class Refresher(Module):
         wants_refresh = Signal()
         wants_zqcs    = Signal()
 
-        # Refresh Timer ----------------------------------------------------------------------------
+        # Refresh Timer
         timer = RefreshTimer(settings.timing.tREFI)
         self.submodules.timer = timer
         self.comb += timer.wait.eq(~timer.done)
 
-        # Refresh Postponer ------------------------------------------------------------------------
+        # Refresh Postponer
         postponer = RefreshPostponer(postponing)
         self.submodules.postponer = postponer
         self.comb += postponer.req_i.eq(self.timer.done)
         self.comb += wants_refresh.eq(postponer.req_o)
 
-        # Refresh Sequencer ------------------------------------------------------------------------
+        # Refresh Sequencer
         sequencer = RefreshSequencer(cmd, settings.timing.tRP, settings.timing.tRFC, postponing)
         self.submodules.sequencer = sequencer
 
         if settings.timing.tZQCS is not None:
-            # ZQCS Timer ---------------------------------------------------------------------------
+            # ZQCS Timer
             zqcs_timer = RefreshTimer(int(clk_freq/zqcs_freq))
             self.submodules.zqcs_timer = zqcs_timer
             self.comb += wants_zqcs.eq(zqcs_timer.done)
 
-            # ZQCS Executer ------------------------------------------------------------------------
+            # ZQCS Executer
             zqcs_executer = ZQCSExecuter(cmd, settings.timing.tRP, settings.timing.tZQCS)
             self.submodules.zqs_executer = zqcs_executer
             self.comb += zqcs_timer.wait.eq(~zqcs_executer.done)
 
-        # Refresh FSM ------------------------------------------------------------------------------
+        # Refresh FSM
         self.submodules.fsm = fsm = FSM()
         fsm.act("IDLE",
             If(settings.with_refresh,
@@ -6719,12 +6183,10 @@ class BankMachine(Module):
 
         auto_precharge = Signal()
 
-        # Command buffer ---------------------------------------------------------------------------
+        # Command buffer
         cmd_buffer_layout    = [("we", 1), ("addr", len(req.addr))]
-        cmd_buffer_lookahead = SyncFIFO(
-            cmd_buffer_layout, settings.cmd_buffer_depth,
-            buffered=settings.cmd_buffer_buffered)
-        cmd_buffer = Buffer(cmd_buffer_layout) # 1 depth buffer to detect row change
+        cmd_buffer_lookahead = SyncFIFO(cmd_buffer_layout, settings.cmd_buffer_depth, buffered=settings.cmd_buffer_buffered)
+        cmd_buffer = PipeValid(cmd_buffer_layout) # 1 depth buffer to detect row change
         self.submodules += cmd_buffer_lookahead, cmd_buffer
         self.comb += [
             req.connect(cmd_buffer_lookahead.sink, keep={"valid", "ready", "we", "addr"}),
@@ -6735,7 +6197,7 @@ class BankMachine(Module):
 
         slicer = _AddressSlicer(settings.geom.colbits, address_align)
 
-        # Row tracking -----------------------------------------------------------------------------
+        # Row tracking
         row        = Signal(settings.geom.rowbits)
         row_opened = Signal()
         row_hit    = Signal()
@@ -6750,7 +6212,7 @@ class BankMachine(Module):
                 row.eq(slicer.row(cmd_buffer.source.addr))
             )
 
-        # Address generation -----------------------------------------------------------------------
+        # Address generation
         row_col_n_addr_sel = Signal()
         self.comb += [
             cmd.ba.eq(n),
@@ -6761,21 +6223,21 @@ class BankMachine(Module):
             )
         ]
 
-        # tWTP (write-to-precharge) controller -----------------------------------------------------
+        # tWTP (write-to-precharge) controller
         write_latency = math.ceil(settings.phy.cwl / settings.phy.nphases)
         precharge_time = write_latency + settings.timing.tWR + settings.timing.tCCD # AL=0
         self.submodules.twtpcon = twtpcon = tXXDController(precharge_time)
         self.comb += twtpcon.valid.eq(cmd.valid & cmd.ready & cmd.is_write)
 
-        # tRC (activate-activate) controller -------------------------------------------------------
+        # tRC (activate-activate) controller
         self.submodules.trccon = trccon = tXXDController(settings.timing.tRC)
         self.comb += trccon.valid.eq(cmd.valid & cmd.ready & row_open)
 
-        # tRAS (activate-precharge) controller -----------------------------------------------------
+        # tRAS (activate-precharge) controller
         self.submodules.trascon = trascon = tXXDController(settings.timing.tRAS)
         self.comb += trascon.valid.eq(cmd.valid & cmd.ready & row_open)
 
-        # Auto Precharge generation ----------------------------------------------------------------
+        # Auto Precharge generation
         # generate auto precharge when current and next cmds are to different rows
         if settings.with_auto_precharge:
             self.comb += \
@@ -6786,7 +6248,7 @@ class BankMachine(Module):
                     )
                 )
 
-        # Control and command generation FSM -------------------------------------------------------
+        # Control and command generation FSM
         # Note: tRRD, tFAW, tCCD, tWTR timings are enforced by the multiplexer
         self.submodules.fsm = fsm = FSM()
         fsm.act("REGULAR",
@@ -7068,7 +6530,7 @@ class _Steerer(Module):
                 # FIXME: add dynamic drive for multi-rank (will be needed for high frequencies)
                 self.comb += phase.odt.eq(Replicate(Signal(reset=1), nranks))
             if rankbits:
-                rank_decoder = Decoder(nranks)
+                rank_decoder = OneHotDecoder(nranks)
                 self.submodules += rank_decoder
                 self.comb += rank_decoder.i.eq((Array(cmd.ba[-rankbits:] for cmd in commands)[sel]))
                 if i == 0: # Select all ranks on refresh.
@@ -7121,7 +6583,7 @@ class Multiplexer(Module, AutoCSR):
         ras_allowed = Signal(reset=1)
         cas_allowed = Signal(reset=1)
 
-        # Command choosing -------------------------------------------------------------------------
+        # Command choosing
         requests = [bm.cmd for bm in bank_machines]
         self.submodules.choose_cmd = choose_cmd = _CommandChooser(requests)
         self.submodules.choose_req = choose_req = _CommandChooser(requests)
@@ -7131,32 +6593,32 @@ class Multiplexer(Module, AutoCSR):
             self.comb += choose_req.want_cmds.eq(1)
             self.comb += choose_req.want_activates.eq(ras_allowed)
 
-        # Command steering -------------------------------------------------------------------------
+        # Command steering
         nop = Record(cmd_request_layout(settings.geom.addressbits, log2_int(len(bank_machines))))
         # nop must be 1st
         commands = [nop, choose_cmd.cmd, choose_req.cmd, refresher.cmd]
         steerer = _Steerer(commands, dfi)
         self.submodules += steerer
 
-        # tRRD timing (Row to Row delay) -----------------------------------------------------------
+        # tRRD timing (Row to Row delay)
         self.submodules.trrdcon = trrdcon = tXXDController(settings.timing.tRRD)
         self.comb += trrdcon.valid.eq(choose_cmd.accept() & choose_cmd.activate())
 
-        # tFAW timing (Four Activate Window) -------------------------------------------------------
+        # tFAW timing (Four Activate Window)
         self.submodules.tfawcon = tfawcon = tFAWController(settings.timing.tFAW)
         self.comb += tfawcon.valid.eq(choose_cmd.accept() & choose_cmd.activate())
 
-        # RAS control ------------------------------------------------------------------------------
+        # RAS control
         self.comb += ras_allowed.eq(trrdcon.ready & tfawcon.ready)
 
-        # tCCD timing (Column to Column delay) -----------------------------------------------------
+        # tCCD timing (Column to Column delay)
         self.submodules.tccdcon = tccdcon = tXXDController(settings.timing.tCCD)
         self.comb += tccdcon.valid.eq(choose_req.accept() & (choose_req.write() | choose_req.read()))
 
-        # CAS control ------------------------------------------------------------------------------
+        # CAS control
         self.comb += cas_allowed.eq(tccdcon.ready)
 
-        # tWTR timing (Write to Read delay) --------------------------------------------------------
+        # tWTR timing (Write to Read delay)
         write_latency = math.ceil(settings.phy.cwl / settings.phy.nphases)
         self.submodules.twtrcon = twtrcon = tXXDController(
             settings.timing.tWTR + write_latency +
@@ -7164,7 +6626,7 @@ class Multiplexer(Module, AutoCSR):
             settings.timing.tCCD if settings.timing.tCCD is not None else 0)
         self.comb += twtrcon.valid.eq(choose_req.accept() & choose_req.write())
 
-        # Read/write turnaround --------------------------------------------------------------------
+        # Read/write turnaround
         read_available = Signal()
         write_available = Signal()
         reads = [req.valid & req.is_read for req in requests]
@@ -7193,13 +6655,13 @@ class Multiplexer(Module, AutoCSR):
         read_time_en,   max_read_time = anti_starvation(settings.read_time)
         write_time_en, max_write_time = anti_starvation(settings.write_time)
 
-        # Refresh ----------------------------------------------------------------------------------
+        # Refresh
         self.comb += [bm.refresh_req.eq(refresher.cmd.valid) for bm in bank_machines]
         go_to_refresh = Signal()
         bm_refresh_gnts = [bm.refresh_gnt for bm in bank_machines]
         self.comb += go_to_refresh.eq(reduce(operator.and_, bm_refresh_gnts))
 
-        # Datapath ---------------------------------------------------------------------------------
+        # Datapath
         all_rddata = [p.rddata for p in dfi.phases]
         all_wrdata = [p.wrdata for p in dfi.phases]
         all_wrdata_mask = [p.wrdata_mask for p in dfi.phases]
@@ -7228,7 +6690,7 @@ class Multiplexer(Module, AutoCSR):
                 r.append(s)
             return r
 
-        # Control FSM ------------------------------------------------------------------------------
+        # Control FSM
         self.submodules.fsm = fsm = FSM()
         fsm.act("READ",
             read_time_en.eq(1),
@@ -7317,12 +6779,11 @@ class ControllerSettings(Settings):
         self.set_attributes(locals())
 
 class LiteDRAMController(Module):
-    def __init__(self, phy_settings, geom_settings, timing_settings, clk_freq,
-        controller_settings=ControllerSettings()):
-        burst_length = phy_settings.nphases * (1 if phy_settings.memtype == "SDR" else 2)
+    def __init__(self, phy_settings, geom_settings, timing_settings, clk_freq, controller_settings=ControllerSettings()):
+        burst_length = phy_settings.nphases * 2
         address_align = log2_int(burst_length)
 
-        # Settings ---------------------------------------------------------------------------------
+        # Settings
         self.settings        = controller_settings
         self.settings.phy    = phy_settings
         self.settings.geom   = geom_settings
@@ -7331,10 +6792,10 @@ class LiteDRAMController(Module):
         nranks = phy_settings.nranks
         nbanks = 2**geom_settings.bankbits
 
-        # LiteDRAM Interface (User) ----------------------------------------------------------------
+        # LiteDRAM Interface (User)
         self.interface = interface = LiteDRAMInterface(address_align, self.settings)
 
-        # DFI Interface (Memory) -------------------------------------------------------------------
+        # DFI Interface (Memory)
         self.dfi = DFIInterface(
             addressbits = geom_settings.addressbits,
             bankbits    = geom_settings.bankbits,
@@ -7342,15 +6803,15 @@ class LiteDRAMController(Module):
             databits    = phy_settings.dfi_databits,
             nphases     = phy_settings.nphases)
 
-        # Refresher --------------------------------------------------------------------------------
+        # Refresher
         self.submodules.refresher = self.settings.refresh_cls(self.settings,
             clk_freq   = clk_freq,
             zqcs_freq  = self.settings.refresh_zqcs_freq,
             postponing = self.settings.refresh_postponing)
 
-        # Bank Machines ----------------------------------------------------------------------------
+        # Bank Machines
         bank_machines = []
-        for n in range(nranks*nbanks):
+        for n in range(nranks * nbanks):
             bank_machine = BankMachine(n,
                 address_width = interface.address_width,
                 address_align = address_align,
@@ -7360,7 +6821,7 @@ class LiteDRAMController(Module):
             self.submodules += bank_machine
             self.comb += getattr(interface, "bank"+str(n)).connect(bank_machine.req)
 
-        # Multiplexer ------------------------------------------------------------------------------
+        # Multiplexer
         self.submodules.multiplexer = Multiplexer(
             settings      = self.settings,
             bank_machines = bank_machines,
@@ -7433,7 +6894,7 @@ class LiteDRAMCrossbar(Module):
             # use internal data_width when no width adaptation is requested
             data_width = self.controller.data_width
 
-        # Crossbar port ----------------------------------------------------------------------------
+        # Crossbar port
         port = LiteDRAMNativePort(
             mode          = mode,
             address_width = self.rca_bits + self.bank_bits - self.rank_bits,
@@ -7442,7 +6903,7 @@ class LiteDRAMCrossbar(Module):
             id            = len(self.masters))
         self.masters.append(port)
 
-        # Clock domain crossing --------------------------------------------------------------------
+        # Clock domain crossing
         if clock_domain != "sys":
             new_port = LiteDRAMNativePort(
                 mode          = mode,
@@ -7453,20 +6914,19 @@ class LiteDRAMCrossbar(Module):
             self.submodules += LiteDRAMNativePortCDC(new_port, port)
             port = new_port
 
-        # Data width convertion --------------------------------------------------------------------
+        # Data width convertion
         if data_width != self.controller.data_width:
             if data_width > self.controller.data_width:
-                addr_shift = -log2_int(data_width//self.controller.data_width)
+                addr_shift = -log2_int(data_width // self.controller.data_width)
             else:
-                addr_shift = log2_int(self.controller.data_width//data_width)
+                addr_shift = log2_int(self.controller.data_width // data_width)
             new_port = LiteDRAMNativePort(
                 mode          = mode,
                 address_width = port.address_width + addr_shift,
                 data_width    = data_width,
                 clock_domain  = clock_domain,
                 id            = port.id)
-            self.submodules += ClockDomainsRenamer(clock_domain)(
-                LiteDRAMNativePortConverter(new_port, port, reverse))
+            self.submodules += ClockDomainsRenamer(clock_domain)(LiteDRAMNativePortConverter(new_port, port, reverse))
             port = new_port
 
         return port
@@ -7475,7 +6935,7 @@ class LiteDRAMCrossbar(Module):
         controller = self.controller
         nmasters   = len(self.masters)
 
-        # Address mapping --------------------------------------------------------------------------
+        # Address mapping
         cba_shifts = {"ROW_BANK_COL": controller.settings.geom.colbits - controller.address_align}
         cba_shift = cba_shifts[controller.settings.address_mapping]
         m_ba      = [m.get_bank_address(self.bank_bits, cba_shift)for m in self.masters]
@@ -7491,7 +6951,7 @@ class LiteDRAMCrossbar(Module):
         for nb, arbiter in enumerate(arbiters):
             bank = getattr(controller, "bank"+str(nb))
 
-            # For each master, determine if another bank locks it ----------------------------------
+            # For each master, determine if another bank locks it
             master_locked = []
             for nm, master in enumerate(self.masters):
                 locked = Signal()
@@ -7501,7 +6961,7 @@ class LiteDRAMCrossbar(Module):
                         locked = locked | (other_bank.lock & (other_arbiter.grant == nm))
                 master_locked.append(locked)
 
-            # Arbitrate ----------------------------------------------------------------------------
+            # Arbitrate
             bank_selected  = [(ba == nb) & ~locked for ba, locked in zip(m_ba, master_locked)]
             bank_requested = [bs & master.cmd.valid for bs, master in zip(bank_selected, self.masters)]
             self.comb += [
@@ -7509,7 +6969,7 @@ class LiteDRAMCrossbar(Module):
                 arbiter.ce.eq(~bank.valid & ~bank.lock)
             ]
 
-            # Route requests -----------------------------------------------------------------------
+            # Route requests
             self.comb += [
                 bank.addr.eq(Array(m_rca)[arbiter.grant]),
                 bank.we.eq(Array(self.masters)[arbiter.grant].cmd.we),
@@ -7544,7 +7004,7 @@ class LiteDRAMCrossbar(Module):
         for master, master_rdata_valid in zip(self.masters, master_rdata_valids):
             self.comb += master.rdata.valid.eq(master_rdata_valid)
 
-        # Route data writes ------------------------------------------------------------------------
+        # Route data writes
         wdata_cases = {}
         for nm, master in enumerate(self.masters):
             wdata_cases[2**nm] = [
@@ -7557,7 +7017,7 @@ class LiteDRAMCrossbar(Module):
         ]
         self.comb += Case(Cat(*master_wdata_readys), wdata_cases)
 
-        # Route data reads -------------------------------------------------------------------------
+        # Route data reads
         for master in self.masters:
             self.comb += master.rdata.data.eq(controller.rdata)
 
@@ -7588,92 +7048,6 @@ cmds = {
     "UNRESET":       "DFII_CONTROL_ODT|DFII_CONTROL_RESET_N",
     "CKE":           "DFII_CONTROL_CKE|DFII_CONTROL_ODT|DFII_CONTROL_RESET_N"
 }
-
-def get_sdr_phy_init_sequence(phy_settings, timing_settings):
-    cl = phy_settings.cl
-    bl = phy_settings.nphases
-    mr = log2_int(bl) + (cl << 4)
-    reset_dll = 1 << 8
-
-    init_sequence = [
-        ("Bring CKE high", 0x0000, 0, cmds["CKE"], 20000),
-        ("Precharge All",  0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Load Mode Register / Reset DLL, CL={0:d}, BL={1:d}".format(cl, bl), mr + reset_dll, 0, cmds["MODE_REGISTER"], 200),
-        ("Precharge All", 0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Load Mode Register / CL={0:d}, BL={1:d}".format(cl, bl), mr, 0, cmds["MODE_REGISTER"], 200)
-    ]
-
-    return init_sequence, None
-
-def get_ddr_phy_init_sequence(phy_settings, timing_settings):
-    cl  = phy_settings.cl
-    bl  = 4
-    mr  = log2_int(bl) + (cl << 4)
-    emr = 0
-    reset_dll = 1 << 8
-
-    init_sequence = [
-        ("Bring CKE high", 0x0000, 0, cmds["CKE"], 20000),
-        ("Precharge All",  0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Load Extended Mode Register", emr, 1, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register / Reset DLL, CL={0:d}, BL={1:d}".format(cl, bl), mr + reset_dll, 0, cmds["MODE_REGISTER"], 200),
-        ("Precharge All", 0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Load Mode Register / CL={0:d}, BL={1:d}".format(cl, bl), mr, 0, cmds["MODE_REGISTER"], 200)
-    ]
-
-    return init_sequence, None
-
-def get_lpddr_phy_init_sequence(phy_settings, timing_settings):
-    cl  = phy_settings.cl
-    bl  = 4
-    mr  = log2_int(bl) + (cl << 4)
-    emr = 0
-    reset_dll = 1 << 8
-
-    init_sequence = [
-        ("Bring CKE high", 0x0000, 0, cmds["CKE"], 20000),
-        ("Precharge All",  0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Load Extended Mode Register", emr, 2, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register / Reset DLL, CL={0:d}, BL={1:d}".format(cl, bl), mr + reset_dll, 0, cmds["MODE_REGISTER"], 200),
-        ("Precharge All", 0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Load Mode Register / CL={0:d}, BL={1:d}".format(cl, bl), mr, 0, cmds["MODE_REGISTER"], 200)
-    ]
-
-    return init_sequence, None
-
-def get_ddr2_phy_init_sequence(phy_settings, timing_settings):
-    cl   = phy_settings.cl
-    bl   = 4
-    wr   = 2
-    mr   = log2_int(bl) + (cl << 4) + (wr << 9)
-    emr  = 0
-    emr2 = 0
-    emr3 = 0
-    ocd  = 7 << 7
-    reset_dll = 1 << 8
-
-    init_sequence = [
-        ("Bring CKE high", 0x0000, 0, cmds["CKE"], 20000),
-        ("Precharge All",  0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Load Extended Mode Register 3", emr3, 3, cmds["MODE_REGISTER"], 0),
-        ("Load Extended Mode Register 2", emr2, 2, cmds["MODE_REGISTER"], 0),
-        ("Load Extended Mode Register", emr, 1, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register / Reset DLL, CL={0:d}, BL={1:d}".format(cl, bl), mr + reset_dll, 0, cmds["MODE_REGISTER"], 200),
-        ("Precharge All", 0x0400, 0, cmds["PRECHARGE_ALL"], 0),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Auto Refresh", 0x0, 0, cmds["AUTO_REFRESH"], 4),
-        ("Load Mode Register / CL={0:d}, BL={1:d}".format(cl, bl), mr, 0, cmds["MODE_REGISTER"], 200),
-        ("Load Extended Mode Register / OCD Default", emr+ocd, 1, cmds["MODE_REGISTER"], 0),
-        ("Load Extended Mode Register / OCD Exit", emr, 1, cmds["MODE_REGISTER"], 0),
-    ]
-
-    return init_sequence, None
 
 def get_ddr3_phy_init_sequence(phy_settings, timing_settings):
     cl  = phy_settings.cl
@@ -7778,229 +7152,9 @@ def get_ddr3_phy_init_sequence(phy_settings, timing_settings):
 
     return init_sequence, mr1
 
-def get_ddr4_phy_init_sequence(phy_settings, timing_settings):
-    cl  = phy_settings.cl
-    bl  = 8
-    cwl = phy_settings.cwl
-
-    def format_mr0(bl, cl, wr, dll_reset):
-        bl_to_mr0 = {
-            4: 0b10,
-            8: 0b00
-        }
-        cl_to_mr0 = {
-             9: 0b00000,
-            10: 0b00001,
-            11: 0b00010,
-            12: 0b00011,
-            13: 0b00100,
-            14: 0b00101,
-            15: 0b00110,
-            16: 0b00111,
-            18: 0b01000,
-            20: 0b01001,
-            22: 0b01010,
-            24: 0b01011,
-            23: 0b01100,
-            17: 0b01101,
-            19: 0b01110,
-            21: 0b01111,
-            25: 0b10000,
-            26: 0b10001,
-            27: 0b10010,
-            28: 0b10011,
-            29: 0b10100,
-            30: 0b10101,
-            31: 0b10110,
-            32: 0b10111,
-        }
-        wr_to_mr0 = {
-            10: 0b0000,
-            12: 0b0001,
-            14: 0b0010,
-            16: 0b0011,
-            18: 0b0100,
-            20: 0b0101,
-            24: 0b0110,
-            22: 0b0111,
-            26: 0b1000,
-            28: 0b1001,
-        }
-        mr0 = bl_to_mr0[bl]
-        mr0 |= (cl_to_mr0[cl] & 0b1) << 2
-        mr0 |= ((cl_to_mr0[cl] >> 1) & 0b111) << 4
-        mr0 |= ((cl_to_mr0[cl] >> 4) & 0b1) << 12
-        mr0 |= dll_reset << 8
-        mr0 |= (wr_to_mr0[wr] & 0b111) << 9
-        mr0 |= (wr_to_mr0[wr] >> 3) << 13
-        return mr0
-
-    def format_mr1(dll_enable, ron, rtt_nom):
-        mr1 = dll_enable
-        mr1 |= ((ron >> 0) & 0b1) << 1
-        mr1 |= ((ron >> 1) & 0b1) << 2
-        mr1 |= ((rtt_nom >> 0) & 0b1) << 8
-        mr1 |= ((rtt_nom >> 1) & 0b1) << 9
-        mr1 |= ((rtt_nom >> 2) & 0b1) << 10
-        return mr1
-
-    def format_mr2(cwl, rtt_wr):
-        cwl_to_mr2 = {
-             9: 0b000,
-            10: 0b001,
-            11: 0b010,
-            12: 0b011,
-            14: 0b100,
-            16: 0b101,
-            18: 0b110,
-            20: 0b111
-        }
-        mr2 = cwl_to_mr2[cwl] << 3
-        mr2 |= rtt_wr << 9
-        return mr2
-
-    def format_mr3(fine_refresh_mode):
-        fine_refresh_mode_to_mr3 = {
-            "1x": 0b000,
-            "2x": 0b001,
-            "4x": 0b010
-        }
-        mr3 = fine_refresh_mode_to_mr3[fine_refresh_mode] << 6
-        return mr3
-
-    def format_mr6(tccd):
-        tccd_to_mr6 = {
-            4: 0b000,
-            5: 0b001,
-            6: 0b010,
-            7: 0b011,
-            8: 0b100
-        }
-        mr6 = tccd_to_mr6[tccd] << 10
-        return mr6
-
-    z_to_rtt_nom = {
-        "disabled" : 0b000,
-        "60ohm"    : 0b001,
-        "120ohm"   : 0b010,
-        "40ohm"    : 0b011,
-        "240ohm"   : 0b100,
-        "48ohm"    : 0b101,
-        "80ohm"    : 0b110,
-        "34ohm"    : 0b111
-    }
-
-    z_to_rtt_wr = {
-        "disabled" : 0b000,
-        "120ohm"   : 0b001,
-        "240ohm"   : 0b010,
-        "high-z"   : 0b011,
-        "80ohm"    : 0b100,
-    }
-
-    z_to_ron = {
-        "34ohm" : 0b00,
-        "48ohm" : 0b01,
-    }
-
-    # default electrical settings (point to point)
-    rtt_nom = "40ohm"
-    rtt_wr  = "120ohm"
-    ron     = "34ohm"
-
-    # override electrical settings if specified
-    if hasattr(phy_settings, "rtt_nom"):
-        rtt_nom = phy_settings.rtt_nom
-    if hasattr(phy_settings, "rtt_wr"):
-        rtt_wr = phy_settings.rtt_wr
-    if hasattr(phy_settings, "ron"):
-        ron = phy_settings.ron
-
-    wr  = max(timing_settings.tWTR*phy_settings.nphases, 10) # >= ceiling(tWR/tCK)
-    mr0 = format_mr0(bl, cl, wr, 1)
-    mr1 = format_mr1(1, z_to_ron[ron], z_to_rtt_nom[rtt_nom])
-    mr2 = format_mr2(cwl, z_to_rtt_wr[rtt_wr])
-    mr3 = format_mr3(timing_settings.fine_refresh_mode)
-    mr4 = 0
-    mr5 = 0
-    mr6 = format_mr6(4) # FIXME: tCCD
-
-    rdimm_init = []
-    if phy_settings.is_rdimm:
-        def get_coarse_speed(tck, pll_bypass):
-            # JESD82-31A page 78
-            f_to_coarse_speed = {
-                1600e6: 0,
-                1866e6: 1,
-                2133e6: 2,
-                2400e6: 3,
-                2666e6: 4,
-                2933e6: 5,
-                3200e6: 6,
-            }
-            if pll_bypass:
-                return 7
-            else:
-                for f, speed in f_to_coarse_speed.items():
-                        if tck >= 2/f:
-                            return speed
-                raise ValueError
-        def get_fine_speed(tck):
-            # JESD82-31A page 83
-            freq = 2/tck
-            fine_speed = (freq - 1240e6) // 20e6
-            fine_speed = max(fine_speed, 0)
-            fine_speed = min(fine_speed, 0b1100001)
-            return fine_speed
-
-        coarse_speed = get_coarse_speed(phy_settings.tck, phy_settings.rcd_pll_bypass)
-        fine_speed = get_fine_speed(phy_settings.tck)
-
-        rcd_reset = 0x060 | 0x0                          # F0RC06: command space control; 0: reset RCD
-
-        f0rc0f = 0x0F0 | 0x4                             # F0RC05: 0 nCK latency adder
-
-        f0rc03 = 0x030 | phy_settings.rcd_ca_cs_drive    # F0RC03: CA/CS drive strength
-        f0rc04 = 0x040 | phy_settings.rcd_odt_cke_drive  # F0RC04: ODT/CKE drive strength
-        f0rc05 = 0x050 | phy_settings.rcd_clk_drive      # F0RC04: ODT/CKE drive strength
-
-        f0rc0a = 0x0A0 | coarse_speed                    # F0RC0A: coarse speed selection and PLL bypass
-        f0rc3x = 0x300 | fine_speed                      # F0RC3x: fine speed selection
-
-        rdimm_init = [
-            ("Reset RCD", rcd_reset, 7, cmds["MODE_REGISTER"], 50000),
-            ("Load RCD F0RC0F", f0rc0f, 7, cmds["MODE_REGISTER"], 100),
-            ("Load RCD F0RC03", f0rc03, 7, cmds["MODE_REGISTER"], 100),
-            ("Load RCD F0RC04", f0rc04, 7, cmds["MODE_REGISTER"], 100),
-            ("Load RCD F0RC05", f0rc05, 7, cmds["MODE_REGISTER"], 100),
-            ("Load RCD F0RC0A", f0rc0a, 7, cmds["MODE_REGISTER"], 100),
-            ("Load RCD F0RC3X", f0rc3x, 7, cmds["MODE_REGISTER"], 100),
-        ]
-
-    init_sequence = [
-        ("Release reset", 0x0000, 0, cmds["UNRESET"], 50000),
-        ("Bring CKE high", 0x0000, 0, cmds["CKE"], 10000),
-    ] + rdimm_init + [
-        ("Load Mode Register 3", mr3, 3, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register 6", mr6, 6, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register 5", mr5, 5, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register 4", mr4, 4, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register 2, CWL={0:d}".format(cwl), mr2, 2, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register 1", mr1, 1, cmds["MODE_REGISTER"], 0),
-        ("Load Mode Register 0, CL={0:d}, BL={1:d}".format(cl, bl), mr0, 0, cmds["MODE_REGISTER"], 200),
-        ("ZQ Calibration", 0x0400, 0, "DFII_COMMAND_WE|DFII_COMMAND_CS", 200),
-    ]
-
-    return init_sequence, mr1
-
 def get_sdram_phy_init_sequence(phy_settings, timing_settings):
     return {
-        "SDR"  : get_sdr_phy_init_sequence,
-        "DDR"  : get_ddr_phy_init_sequence,
-        "LPDDR": get_lpddr_phy_init_sequence,
-        "DDR2" : get_ddr2_phy_init_sequence,
         "DDR3" : get_ddr3_phy_init_sequence,
-        "DDR4" : get_ddr4_phy_init_sequence,
     }[phy_settings.memtype](phy_settings, timing_settings)
 
 def get_sdram_phy_c_header(phy_settings, timing_settings):
@@ -8052,12 +7206,7 @@ def get_sdram_phy_c_header(phy_settings, timing_settings):
         r += "#define SDRAM_PHY_DELAYS 8\n"
         r += "#define SDRAM_PHY_BITSLIPS 4\n"
 
-    if phy_settings.is_rdimm:
-        assert phy_settings.memtype == "DDR4"
-        r += "#define SDRAM_PHY_DDR4_RDIMM\n"
-
     r += "\n"
-
     r += "static void cdelay(int i);\n"
 
     # commands_px functions
@@ -8106,26 +7255,13 @@ const unsigned long sdram_dfii_pix_rddata_addr[SDRAM_PHY_PHASES] = {{
 
     init_sequence, mr1 = get_sdram_phy_init_sequence(phy_settings, timing_settings)
 
-    if phy_settings.memtype in ["DDR3", "DDR4"]:
+    if phy_settings.memtype in ["DDR3"]:
         # the value of MR1 needs to be modified during write leveling
         r += "#define DDRX_MR1 {}\n\n".format(mr1)
 
     r += "static void init_sequence(void)\n{\n"
     for comment, a, ba, cmd, delay in init_sequence:
         invert_masks = [(0, 0), ]
-        if phy_settings.is_rdimm:
-            assert phy_settings.memtype == "DDR4"
-            # JESD82-31A page 38
-            #
-            # B-side chips have certain usually-inconsequential address and BA
-            # bits inverted by the RCD to reduce SSO current. For mode register
-            # writes, however, we must compensate for this. BG[1] also directs
-            # writes either to the A side (BG[1]=0) or B side (BG[1]=1)
-            #
-            # The 'ba != 7' is because we don't do this to writes to the RCD
-            # itself.
-            if ba != 7:
-                invert_masks.append((0b10101111111000, 0b1111))
 
         for a_inv, ba_inv in invert_masks:
             r += "\t/* {0} */\n".format(comment)
@@ -8178,10 +7314,7 @@ def get_sdram_phy_py_header(phy_settings, timing_settings):
     return r
 
 class LiteDRAMNativePortCDC(Module):
-    def __init__(self, port_from, port_to,
-                 cmd_depth   = 4,
-                 wdata_depth = 16,
-                 rdata_depth = 16):
+    def __init__(self, port_from, port_to, cmd_depth=4, wdata_depth=16, rdata_depth=16):
         assert port_from.address_width == port_to.address_width
         assert port_from.data_width    == port_to.data_width
         assert port_from.mode          == port_to.mode
@@ -8192,33 +7325,22 @@ class LiteDRAMNativePortCDC(Module):
         clock_domain_from = port_from.clock_domain
         clock_domain_to   = port_to.clock_domain
 
-        cmd_fifo = AsyncFIFO(
-            [("we", 1), ("addr", address_width)], cmd_depth)
-        cmd_fifo = ClockDomainsRenamer(
-            {"write": clock_domain_from,
-             "read":  clock_domain_to})(cmd_fifo)
+        cmd_fifo = AsyncFIFO([("we", 1), ("addr", address_width)], cmd_depth)
+        cmd_fifo = ClockDomainsRenamer({"write": clock_domain_from, "read":  clock_domain_to})(cmd_fifo)
         self.submodules += cmd_fifo
-        self.submodules += Pipeline(
-            port_from.cmd, cmd_fifo, port_to.cmd)
+        self.submodules += Pipeline(port_from.cmd, cmd_fifo, port_to.cmd)
 
         if mode == "write" or mode == "both":
-            wdata_fifo = AsyncFIFO(
-                [("data", data_width), ("we", data_width//8)], wdata_depth)
-            wdata_fifo = ClockDomainsRenamer(
-                {"write": clock_domain_from,
-                 "read":  clock_domain_to})(wdata_fifo)
+            wdata_fifo = AsyncFIFO([("data", data_width), ("we", data_width // 8)], wdata_depth)
+            wdata_fifo = ClockDomainsRenamer({"write": clock_domain_from, "read":  clock_domain_to})(wdata_fifo)
             self.submodules += wdata_fifo
-            self.submodules += Pipeline(
-                port_from.wdata, wdata_fifo, port_to.wdata)
+            self.submodules += Pipeline(port_from.wdata, wdata_fifo, port_to.wdata)
 
         if mode == "read" or mode == "both":
             rdata_fifo = AsyncFIFO([("data", data_width)], rdata_depth)
-            rdata_fifo = ClockDomainsRenamer(
-                {"write": clock_domain_to,
-                 "read":  clock_domain_from})(rdata_fifo)
+            rdata_fifo = ClockDomainsRenamer({"write": clock_domain_to, "read":  clock_domain_from})(rdata_fifo)
             self.submodules += rdata_fifo
-            self.submodules += Pipeline(
-                port_to.rdata, rdata_fifo, port_from.rdata)
+            self.submodules += Pipeline(port_to.rdata, rdata_fifo, port_from.rdata)
 
 class LiteDRAMNativePortDownConverter(Module):
     """LiteDRAM port DownConverter
@@ -8238,7 +7360,7 @@ class LiteDRAMNativePortDownConverter(Module):
         if port_from.data_width % port_to.data_width:
             raise ValueError("Ratio must be an int")
 
-        ratio = port_from.data_width//port_to.data_width
+        ratio = port_from.data_width // port_to.data_width
         mode  = port_from.mode
 
         counter       = Signal(max=ratio)
@@ -8272,22 +7394,14 @@ class LiteDRAMNativePortDownConverter(Module):
         )
 
         if mode == "write" or mode == "both":
-            wdata_converter = StrideConverter(
-                port_from.wdata.description,
-                port_to.wdata.description,
-                reverse=reverse)
+            wdata_converter = StrideConverter(port_from.wdata.description, port_to.wdata.description, reverse=reverse)
             self.submodules += wdata_converter
-            self.submodules += Pipeline(
-                port_from.wdata, wdata_converter, port_to.wdata)
+            self.submodules += Pipeline(port_from.wdata, wdata_converter, port_to.wdata)
 
         if mode == "read" or mode == "both":
-            rdata_converter = StrideConverter(
-                port_to.rdata.description,
-                port_from.rdata.description,
-                reverse=reverse)
+            rdata_converter = StrideConverter(port_to.rdata.description, port_from.rdata.description, reverse=reverse)
             self.submodules += rdata_converter
-            self.submodules += Pipeline(
-                port_to.rdata, rdata_converter, port_from.rdata)
+            self.submodules += Pipeline(port_to.rdata, rdata_converter, port_from.rdata)
 
 class LiteDRAMNativeWritePortUpConverter(Module):
     # TODO: finish and remove hack
@@ -8307,7 +7421,7 @@ class LiteDRAMNativeWritePortUpConverter(Module):
         if port_to.data_width % port_from.data_width:
             raise ValueError("Ratio must be an int")
 
-        ratio = port_to.data_width//port_from.data_width
+        ratio = port_to.data_width // port_from.data_width
 
         we      = Signal()
         address = Signal(port_to.address_width)
@@ -8350,15 +7464,9 @@ class LiteDRAMNativeWritePortUpConverter(Module):
             )
         )
 
-        wdata_converter = StrideConverter(
-            port_from.wdata.description,
-            port_to.wdata.description,
-            reverse=reverse)
+        wdata_converter = StrideConverter(port_from.wdata.description, port_to.wdata.description, reverse=reverse)
         self.submodules += wdata_converter
-        self.submodules += Pipeline(
-            port_from.wdata,
-            wdata_converter,
-            port_to.wdata)
+        self.submodules += Pipeline(port_from.wdata, wdata_converter, port_to.wdata)
 
 class LiteDRAMNativeReadPortUpConverter(Module):
     """LiteDRAM port UpConverter
@@ -8377,9 +7485,9 @@ class LiteDRAMNativeReadPortUpConverter(Module):
         if port_to.data_width % port_from.data_width:
             raise ValueError("Ratio must be an int")
 
-        ratio = port_to.data_width//port_from.data_width
+        ratio = port_to.data_width // port_from.data_width
 
-        # Command ----------------------------------------------------------------------------------
+        # Command
         cmd_buffer = SyncFIFO([("sel", ratio)], 4)
         self.submodules += cmd_buffer
 
@@ -8410,13 +7518,10 @@ class LiteDRAMNativeReadPortUpConverter(Module):
                 cmd_buffer.sink.sel.eq(2**ratio-1)
             )
 
-        # Datapath ---------------------------------------------------------------------------------
-        rdata_buffer    = Buffer(port_to.rdata.description)
-        rdata_converter = StrideConverter(
-            port_to.rdata.description,
-            port_from.rdata.description,
-            reverse=reverse)
-        self.submodules +=  rdata_buffer, rdata_converter
+        # Datapath
+        rdata_buffer    = PipeValid(port_to.rdata.description)
+        rdata_converter = StrideConverter(port_to.rdata.description, port_from.rdata.description, reverse=reverse)
+        self.submodules += rdata_buffer, rdata_converter
 
         rdata_chunk       = Signal(ratio, reset=1)
         rdata_chunk_valid = Signal()
@@ -8441,8 +7546,7 @@ class LiteDRAMNativeReadPortUpConverter(Module):
                     rdata_converter.source.ready.eq(1)
                 )
             ),
-            cmd_buffer.source.ready.eq(
-                rdata_converter.source.ready & rdata_chunk[ratio-1])
+            cmd_buffer.source.ready.eq(rdata_converter.source.ready & rdata_chunk[ratio-1])
         ]
 
 class LiteDRAMNativePortConverter(Module):
@@ -8476,12 +7580,12 @@ class LiteDRAMWishbone2Native(Module):
         port_data_width     = 2**int(math.log2(len(port.wdata.data))) # Round to lowest power 2
         assert wishbone_data_width >= port_data_width
 
-        adr_offset = base_address >> log2_int(port.data_width//8)
+        adr_offset = base_address >> log2_int(port.data_width // 8)
 
-        # Write Datapath ---------------------------------------------------------------------------
+        # Write Datapath
         wdata_converter = StrideConverter(
-            [("data", wishbone_data_width), ("we", wishbone_data_width//8)],
-            [("data", port_data_width),     ("we", port_data_width//8)],
+            [("data", wishbone_data_width), ("we", wishbone_data_width // 8)],
+            [("data", port_data_width),     ("we", port_data_width // 8)],
         )
         self.submodules += wdata_converter
         self.comb += [
@@ -8491,11 +7595,8 @@ class LiteDRAMWishbone2Native(Module):
             wdata_converter.source.connect(port.wdata)
         ]
 
-        # Read Datapath ----------------------------------------------------------------------------
-        rdata_converter = StrideConverter(
-            [("data", port_data_width)],
-            [("data", wishbone_data_width)],
-        )
+        # Read Datapath
+        rdata_converter = StrideConverter([("data", port_data_width)], [("data", wishbone_data_width)])
         self.submodules += rdata_converter
         self.comb += [
             port.rdata.connect(rdata_converter.sink),
@@ -8503,8 +7604,8 @@ class LiteDRAMWishbone2Native(Module):
             wishbone.dat_r.eq(rdata_converter.source.data),
         ]
 
-        # Control ----------------------------------------------------------------------------------
-        ratio = wishbone_data_width//port_data_width
+        # Control
+        ratio = wishbone_data_width // port_data_width
         count = Signal(max=max(ratio, 2))
         self.submodules.fsm = fsm = FSM(reset_state="CMD")
         fsm.act("CMD",
@@ -8548,27 +7649,8 @@ class _SpeedgradeTimings(Settings):
     def __init__(self, tRP, tRCD, tWR, tRFC, tFAW, tRAS):
         self.set_attributes(locals())
 
-def _read_field(byte, nbits, shift):
-    mask = 2**nbits - 1
-    return (byte & (mask << shift)) >> shift
-
-def _twos_complement(value, nbits):
-    if value & (1 << (nbits - 1)):
-        value -= (1 << nbits)
-    return value
-
-def _word(msb, lsb):
-    return (msb << 8) | lsb
-
-# most signifficant (upper) / least signifficant (lower) nibble
-def _msn(byte):
-    return _read_field(byte, nbits=4, shift=4)
-
-def _lsn(byte):
-    return _read_field(byte, nbits=4, shift=0)
-
-class SDRAMModule:
-    """SDRAM module geometry and timings.
+class DDR3Module:
+    """DDR3 SDRAM module geometry and timings.
 
     SDRAM controller has to ensure that all geometry and
     timings parameters are fulfilled. Timings parameters
@@ -8578,8 +7660,11 @@ class SDRAMModule:
     SDRAM modules with the same geometry exist can have
     various speedgrades.
     """
+
+    memtype = "DDR3"
     registered = False
-    def __init__(self, clk_freq, rate, speedgrade=None, fine_refresh_mode=None):
+
+    def __init__(self, clk_freq, rate, speedgrade=None):
         self.clk_freq      = clk_freq
         self.rate          = rate
         self.speedgrade    = speedgrade
@@ -8588,25 +7673,20 @@ class SDRAMModule:
             rowbits  = log2_int(self.nrows),
             colbits  = log2_int(self.ncols),
         )
-        assert not (self.memtype != "DDR4" and fine_refresh_mode != None)
-        assert fine_refresh_mode in [None, "1x", "2x", "4x"]
-        if (fine_refresh_mode is None) and (self.memtype == "DDR4"):
-            fine_refresh_mode = "1x"
         self.timing_settings = TimingSettings(
             tRP   = self.ns_to_cycles(self.get("tRP")),
             tRCD  = self.ns_to_cycles(self.get("tRCD")),
             tWR   = self.ns_to_cycles(self.get("tWR")),
-            tREFI = self.ns_to_cycles(self.get("tREFI", fine_refresh_mode), False),
-            tRFC  = self.ck_ns_to_cycles(*self.get("tRFC", fine_refresh_mode)),
+            tREFI = self.ns_to_cycles(self.get("tREFI"), False),
+            tRFC  = self.ck_ns_to_cycles(*self.get("tRFC")),
             tWTR  = self.ck_ns_to_cycles(*self.get("tWTR")),
             tFAW  = None if self.get("tFAW") is None else self.ck_ns_to_cycles(*self.get("tFAW")),
             tCCD  = None if self.get("tCCD") is None else self.ck_ns_to_cycles(*self.get("tCCD")),
             tRRD  = None if self.get("tRRD") is None else self.ck_ns_to_cycles(*self.get("tRRD")),
-            tRC   = None  if self.get("tRAS") is None else self.ns_to_cycles(self.get("tRP") + self.get("tRAS")),
+            tRC   = None if self.get("tRAS") is None else self.ns_to_cycles(self.get("tRP") + self.get("tRAS")),
             tRAS  = None if self.get("tRAS") is None else self.ns_to_cycles(self.get("tRAS")),
             tZQCS = None if self.get("tZQCS") is None else self.ck_ns_to_cycles(*self.get("tZQCS"))
         )
-        self.timing_settings.fine_refresh_mode = fine_refresh_mode
 
     def get(self, name, key=None):
         r = None
@@ -8656,13 +7736,7 @@ class SDRAMModule:
         t = 0 if t is None else t
         return max(self.ck_to_cycles(c), self.ns_to_cycles(t))
 
-class SDRAMRegisteredModule(SDRAMModule): registered = True
-
-class DDR3Module(SDRAMModule):                     memtype = "DDR3"
-class DDR3RegisteredModule(SDRAMRegisteredModule): memtype = "DDR3"
-
 class MT41K64M16(DDR3Module):
-    memtype = "DDR3"
     # geometry
     nbanks = 8
     nrows  = 8192
@@ -8844,16 +7918,16 @@ class IoBuf(Module):
         ]
 
         # Add IO buffers for outputs
-        self.specials += Instance('OFS1P3BX',
+        self.specials += Instance("OFS1P3BX",
             i_D=self.usb_p_tx,
-            i_SCLK=ClockSignal('usb_48'),
+            i_SCLK=ClockSignal("usb_48"),
             i_SP=1,
             i_PD=0,
             o_Q=usb_p_tx,
         )
-        self.specials += Instance('OFS1P3BX',
+        self.specials += Instance("OFS1P3BX",
             i_D=self.usb_n_tx,
-            i_SCLK=ClockSignal('usb_48'),
+            i_SCLK=ClockSignal("usb_48"),
             i_SP=1,
             i_PD=0,
             o_Q=usb_n_tx,
@@ -8864,33 +7938,23 @@ class IoBuf(Module):
         usb_n_rx_ = Signal()
         usb_p_t_i = Signal()
         usb_n_t_i = Signal()
-        self.specials += Instance('IFS1P3BX',
+        self.specials += Instance("IFS1P3BX",
             i_D=usb_p_t.i,
-            i_SCLK=ClockSignal('usb_48'),
+            i_SCLK=ClockSignal("usb_48"),
             i_SP=1,
             i_PD=0,
             o_Q=usb_p_rx_,
         )
         self.sync.usb_48 += usb_p_t_i.eq(usb_p_rx_)
 
-        self.specials += Instance('IFS1P3BX',
+        self.specials += Instance("IFS1P3BX",
             i_D=usb_n_t.i,
-            i_SCLK=ClockSignal('usb_48'),
+            i_SCLK=ClockSignal("usb_48"),
             i_SP=1,
             i_PD=0,
             o_Q=usb_n_rx_,
         )
         self.sync.usb_48 += usb_n_t_i.eq(usb_n_rx_)
-
-        #######################################################################
-        #######################################################################
-        #### Mux the USB +/- pair with the TX and RX paths
-        #######################################################################
-        #######################################################################
-        #self.specials += [
-            #MultiReg(usb_p_t.i, usb_p_t_i),
-            #MultiReg(usb_n_t.i, usb_n_t_i)
-        #]
 
         self.comb += [
             If(self.usb_tx_en,
@@ -8905,84 +7969,6 @@ class IoBuf(Module):
             usb_p_t.o.eq(usb_p_tx),
             usb_n_t.o.eq(usb_n_tx),
         ]
-
-class FakeIoBuf(Module):
-    def __init__(self):
-        self.usb_pullup = Signal()
-
-        self.usb_p = Signal()
-        self.usb_n = Signal()
-
-        self.usb_tx_en = Signal()
-        self.usb_p_tx = Signal()
-        self.usb_n_tx = Signal()
-
-        self.usb_p_rx = Signal()
-        self.usb_n_rx = Signal()
-
-        self.usb_p_rx_io = Signal()
-        self.usb_n_rx_io = Signal()
-
-        self.comb += [
-            If(self.usb_tx_en,
-                self.usb_p_rx.eq(0b1),
-                self.usb_n_rx.eq(0b0)
-            ).Else(
-                self.usb_p_rx.eq(self.usb_p_rx_io),
-                self.usb_n_rx.eq(self.usb_n_rx_io)
-            ),
-        ]
-
-        self.comb += [
-            If(self.usb_tx_en,
-                self.usb_p.eq(self.usb_p_tx),
-                self.usb_n.eq(self.usb_n_tx),
-            ).Else(
-                self.usb_p.eq(self.usb_p_rx),
-                self.usb_n.eq(self.usb_n_rx),
-            ),
-        ]
-
-    def recv(self, v):
-        tx_en = yield self.usb_tx_en
-        assert not tx_en, "Currently transmitting!"
-
-        if v == '0' or v == '_':
-            # SE0 - both lines pulled low
-            yield self.usb_p_rx_io.eq(0)
-            yield self.usb_n_rx_io.eq(0)
-        elif v == '1':
-            # SE1 - illegal, should never occur
-            yield self.usb_p_rx_io.eq(1)
-            yield self.usb_n_rx_io.eq(1)
-        elif v == '-' or v == 'I':
-            # Idle
-            yield self.usb_p_rx_io.eq(1)
-            yield self.usb_n_rx_io.eq(0)
-        elif v == 'J':
-            yield self.usb_p_rx_io.eq(1)
-            yield self.usb_n_rx_io.eq(0)
-        elif v == 'K':
-            yield self.usb_p_rx_io.eq(0)
-            yield self.usb_n_rx_io.eq(1)
-        else:
-            assert False, "Unknown value: %s" % v
-
-    def current(self):
-        usb_p = yield self.usb_p
-        usb_n = yield self.usb_n
-        values = (usb_p, usb_n)
-
-        if values == (0, 0):
-            return '_'
-        elif values == (1, 1):
-            return '1'
-        elif values == (1, 0):
-            return 'J'
-        elif values == (0, 1):
-            return 'K'
-        else:
-            assert False, values
 
 @ResetInserter()
 class RxBitstuffRemover(Module):
@@ -9932,89 +8918,6 @@ class TxShifter(Module):
             self.o_data.eq(shifter[0]),
         ]
 
-@CEInserter()
-@ResetInserter()
-class TxSerialCrcGenerator(Module):
-    """
-    Transmit CRC Generator
-
-    TxSerialCrcGenerator generates a running CRC.
-
-    https://www.pjrc.com/teensy/beta/usb20.pdf, USB2 Spec, 8.3.5
-    https://en.wikipedia.org/wiki/Cyclic_redundancy_check
-
-    Parameters
-    ----------
-    Parameters are passed in via the constructor.
-
-    width : int
-        Width of the CRC.
-
-    polynomial : int
-        CRC polynomial in integer form.
-
-    initial : int
-        Initial value of the CRC register before data starts shifting in.
-
-    Input Ports
-    ------------
-    i_data : Signal(1)
-        Serial data to generate CRC for.
-
-    Output Ports
-    ------------
-    o_crc : Signal(width)
-        Current CRC value.
-
-    """
-
-    def __init__(self, width, polynomial, initial):
-
-        self.i_data = Signal()
-
-        crc = Signal(width, reset=initial)
-        crc_invert = Signal(1)
-
-        self.comb += [
-            crc_invert.eq(self.i_data ^ crc[width - 1])
-        ]
-
-        for i in range(width):
-            rhs_data = None
-            if i == 0:
-                rhs_data = crc_invert
-            else:
-                if (polynomial >> i) & 1:
-                    rhs_data = crc[i - 1] ^ crc_invert
-                else:
-                    rhs_data = crc[i - 1]
-
-            self.sync += [
-                crc[i].eq(rhs_data)
-            ]
-
-        self.o_crc = Signal(width)
-
-        for i in range(width):
-            self.comb += [
-                self.o_crc[i].eq(1 ^ crc[width - i - 1]),
-            ]
-
-def bytes_to_int(d):
-    """Convert a list of bytes to an int
-
-    Bytes are in LSB first.
-
-    >>> hex(bytes_to_int([0, 1]))
-    '0x100'
-    >>> hex(bytes_to_int([1, 2]))
-    '0x201'
-    """
-    v = 0
-    for i,d in enumerate(d):
-        v |= d << (i*8)
-    return v
-
 def cols(rows):
     """
     >>> a = [
@@ -10095,33 +8998,6 @@ def lfsr_serial_shift_crc(lfsr_poly, lfsr_cur, data):
                 lfsr_next[i] = lfsr_next[i-1]
         lfsr_next[0] = lfsr_upper_bit ^ data[j]
     return list(lfsr_next[::-1])
-
-def print_matrix(crc_width, cols_nin, cols_min):
-    """
-    >>> crc_width = 5
-    >>> data_width = 4
-    >>> poly_list = [0, 0, 1, 0, 1]
-    >>> _, cols_nin, cols_min = build_matrix(poly_list, data_width)
-    >>> print_matrix(crc_width, cols_nin, cols_min)
-       0 d[ 0],      ,      , d[ 3],      , c[ 1],      ,      , c[ 4]
-       1      , d[ 1],      ,      ,      ,      , c[ 2],      ,
-       2 d[ 0],      , d[ 2], d[ 3],      , c[ 1],      , c[ 3], c[ 4]
-       3      , d[ 1],      , d[ 3],      ,      , c[ 2],      , c[ 4]
-       4      ,      , d[ 2],      , c[ 0],      ,      , c[ 3],
-    """
-    for i in range(crc_width):
-        text_xor = []
-        for j, use in enumerate(cols_nin[i]):
-            if use:
-                text_xor.append('d[%2i]' % j)
-            else:
-                text_xor.append('     ')
-        for j, use in enumerate(cols_min[i]):
-            if use:
-                text_xor.append('c[%2i]' % j)
-            else:
-                text_xor.append('     ')
-        print("{:4d} {}".format(i, ", ".join("{:>5s}".format(x) for x in text_xor).rstrip()))
 
 def build_matrix(lfsr_poly, data_width):
     """
@@ -10283,42 +9159,6 @@ class TxParallelCrcGenerator(Module):
         crc_next_reset_value = int("0b"+"".join(str(i) for i in crc_next_reset_bits[::-1]), 2)
         crc_next.reset.value = crc_next_reset_value
 
-class TxCrcPipeline(Module):
-    def __init__(self):
-        self.i_data_payload = Signal(8)
-        self.o_data_ack = Signal()
-        self.o_crc16 = Signal(16)
-
-        self.reset = reset = Signal()
-        reset_n1 = Signal()
-        reset_n2 = Signal()
-        self.ce = ce = Signal()
-
-        self.sync += [
-            reset_n2.eq(reset_n1),
-            reset_n1.eq(reset),
-        ]
-
-        self.submodules.shifter = shifter = TxShifter(width=8)
-        self.comb += [
-            shifter.i_data.eq(self.i_data_payload),
-            shifter.reset.eq(reset),
-            shifter.ce.eq(ce),
-            self.o_data_ack.eq(shifter.o_get),
-        ]
-
-        self.submodules.crc = crc_calc = TxSerialCrcGenerator(
-            width      = 16,
-            polynomial = 0b1000000000000101,
-            initial    = 0b1111111111111111,
-        )
-        self.comb += [
-            crc_calc.i_data.eq(shifter.o_data),
-            crc_calc.reset.eq(reset_n2),
-            crc_calc.ce.eq(ce),
-            self.o_crc16.eq(crc_calc.o_crc),
-        ]
-
 class TxPipeline(Module):
     def __init__(self):
         self.i_bit_strobe = Signal()
@@ -10405,9 +9245,9 @@ class TxPipeline(Module):
             bitstuff_valid_data.eq(~stall & shifter.o_get & self.i_oe),
         ]
 
-        tx_pipeline_fsm.act('IDLE',
+        tx_pipeline_fsm.act("IDLE",
             If(self.i_oe,
-                NextState('SEND_SYNC'),
+                NextState("SEND_SYNC"),
                 NextValue(sync_pulse, 1 << 7),
                 NextValue(state_gray, 0b01),
             ).Else(
@@ -10415,33 +9255,33 @@ class TxPipeline(Module):
             )
         )
 
-        tx_pipeline_fsm.act('SEND_SYNC',
+        tx_pipeline_fsm.act("SEND_SYNC",
             NextValue(sync_pulse, sync_pulse >> 1),
 
             If(sync_pulse[0],
-                NextState('SEND_DATA'),
+                NextState("SEND_DATA"),
                 NextValue(state_gray, 0b11),
             ).Else(
                 NextValue(state_gray, 0b01),
             ),
         )
 
-        tx_pipeline_fsm.act('SEND_DATA',
+        tx_pipeline_fsm.act("SEND_DATA",
             If(~self.i_oe & shifter.o_empty & ~bitstuff.o_stall,
                 If(bitstuff.o_will_stall,
-                    NextState('STUFF_LAST_BIT')
+                    NextState("STUFF_LAST_BIT")
                 ).Else(
                     NextValue(state_gray, 0b10),
-                    NextState('IDLE'),
+                    NextState("IDLE"),
                 )
             ).Else(
                 NextValue(state_gray, 0b11),
             ),
         )
 
-        tx_pipeline_fsm.act('STUFF_LAST_BIT',
+        tx_pipeline_fsm.act("STUFF_LAST_BIT",
             NextValue(state_gray, 0b10),
-            NextState('IDLE'),
+            NextState("IDLE"),
         )
 
         # 48MHz domain
@@ -10463,40 +9303,6 @@ class TxPipeline(Module):
             self.o_usbn.eq(nrzi.o_usbn),
             self.o_oe.eq(nrzi.o_oe),
         ]
-
-class EndpointType(IntEnum):
-    IN = 1
-    OUT = 2
-    BIDIR = IN | OUT
-
-    @classmethod
-    def epaddr(cls, ep_num, ep_dir):
-        assert ep_dir != cls.BIDIR
-        return ep_num << 1 | (ep_dir == cls.IN)
-
-    @classmethod
-    def epnum(cls, ep_addr):
-        return ep_addr >> 1
-
-    @classmethod
-    def epdir(cls, ep_addr):
-        if ep_addr & 0x1 == 0:
-            return cls.OUT
-        else:
-            return cls.IN
-
-class EndpointResponse(IntEnum):
-    """
-    >>> # Clearing top bit of STALL -> NAK
-    >>> assert (EndpointResponse.STALL & EndpointResponse.RESET_MASK) == EndpointResponse.NAK
-    """
-
-    STALL = 0b11
-    ACK   = 0b00
-    NAK   = 0b01
-    NONE  = 0b10
-
-    RESET_MASK = 0b01
 
 class PacketHeaderDecode(Module):
     def __init__(self, rx):
@@ -10565,37 +9371,37 @@ class TxPacketSend(Module):
 
         fsm = FSM()
         self.submodules.fsm = fsm = ClockDomainsRenamer("usb_12")(fsm)
-        fsm.act('IDLE',
+        fsm.act("IDLE",
             NextValue(tx.i_oe, self.i_pkt_start),
             If(self.i_pkt_start,
                 # If i_pkt_start is set, then send the next packet.
                 # We pre-queue the SYNC byte here to cut down on latency.
-                NextState('QUEUE_SYNC'),
+                NextState("QUEUE_SYNC"),
             ).Else(
                 NextValue(tx.i_oe, 0),
             )
         )
 
         # Send the QUEUE_SYNC byte
-        fsm.act('QUEUE_SYNC',
+        fsm.act("QUEUE_SYNC",
             # The PID might change mid-sync, because we're still figuring out what the response ought to be.
             NextValue(pid, self.i_pid),
             tx.i_data_payload.eq(1),
             If(tx.o_data_strobe,
-                NextState('QUEUE_PID'),
+                NextState("QUEUE_PID"),
             ),
         )
 
         # Send the PID byte
-        fsm.act('QUEUE_PID',
+        fsm.act("QUEUE_PID",
             tx.i_data_payload.eq(Cat(pid, pid ^ 0b1111)),
             If(tx.o_data_strobe,
                 If(pid & PIDTypes.TYPE_MASK == PIDTypes.HANDSHAKE,
-                    NextState('WAIT_TRANSMIT'),
+                    NextState("WAIT_TRANSMIT"),
                 ).Elif(pid & PIDTypes.TYPE_MASK == PIDTypes.DATA,
-                    NextState('QUEUE_DATA0'),
+                    NextState("QUEUE_DATA0"),
                 ).Else(
-                    NextState('ERROR'),
+                    NextState("ERROR"),
                 ),
             ),
         )
@@ -10604,16 +9410,16 @@ class TxPacketSend(Module):
         if auto_crc:
             nextstate = 'QUEUE_CRC0'
 
-        fsm.act('QUEUE_DATA0',
+        fsm.act("QUEUE_DATA0",
             If(~self.i_data_ready,
                 NextState(nextstate),
             ).Else(
-                NextState('QUEUE_DATAn'),
+                NextState("QUEUE_DATAn"),
             ),
         )
 
         # Keep transmitting data bytes until the i_data_ready signal is not high on a o_data_strobe event.
-        fsm.act('QUEUE_DATAn',
+        fsm.act("QUEUE_DATAn",
             tx.i_data_payload.eq(self.i_data_payload),
             self.o_data_ack.eq(tx.o_data_strobe),
             If(~self.i_data_ready,
@@ -10632,34 +9438,34 @@ class TxPacketSend(Module):
 
             self.comb += [
                 crc.i_data_payload.eq(self.i_data_payload),
-                crc.reset.eq(fsm.ongoing('QUEUE_PID')),
-                If(fsm.ongoing('QUEUE_DATAn'),
+                crc.reset.eq(fsm.ongoing("QUEUE_PID")),
+                If(fsm.ongoing("QUEUE_DATAn"),
                     crc.i_data_strobe.eq(tx.o_data_strobe),
                 ),
             ]
 
-            fsm.act('QUEUE_CRC0',
+            fsm.act("QUEUE_CRC0",
                 tx.i_data_payload.eq(crc.o_crc[:8]),
                 If(tx.o_data_strobe,
-                    NextState('QUEUE_CRC1'),
+                    NextState("QUEUE_CRC1"),
                 ),
             )
-            fsm.act('QUEUE_CRC1',
+            fsm.act("QUEUE_CRC1",
                 tx.i_data_payload.eq(crc.o_crc[8:]),
                 If(tx.o_data_strobe,
-                    NextState('WAIT_TRANSMIT'),
+                    NextState("WAIT_TRANSMIT"),
                 ),
             )
 
-        fsm.act('WAIT_TRANSMIT',
+        fsm.act("WAIT_TRANSMIT",
             NextValue(tx.i_oe, 0),
             If(~o_oe12,
                 self.o_pkt_end.eq(1),
-                NextState('IDLE'),
+                NextState("IDLE"),
             ),
         )
 
-        fsm.act('ERROR')
+        fsm.act("ERROR")
 
 class UsbTransfer(Module):
     def __init__(self, iobuf, auto_crc=True):
@@ -10671,9 +9477,7 @@ class UsbTransfer(Module):
         self.submodules.rx = rx = RxPipeline()
         self.submodules.rxstate = rxstate = PacketHeaderDecode(rx)
 
-        # ----------------------
         # USB 48MHz bit strobe
-        # ----------------------
         self.comb += [
             tx.i_bit_strobe.eq(rx.o_bit_strobe),
         ]
@@ -10685,9 +9489,7 @@ class UsbTransfer(Module):
         self.usb_reset = Signal()
         self.comb += self.usb_reset.eq(rx.o_reset)
 
-        # ----------------------
         # Data paths
-        # ----------------------
         self.data_recv_put = Signal()
         self.data_recv_payload = Signal(8)
 
@@ -10695,9 +9497,7 @@ class UsbTransfer(Module):
         self.data_send_have = Signal()
         self.data_send_payload = Signal(8)
 
-        # ----------------------
         # State signally
-        # ----------------------
         # The value of these signals are generally dependent on endp, so we need to wait for the rdy signal to use them.
         self.rdy  = Signal(reset=1)
         self.dtb  = Signal()
@@ -10705,9 +9505,7 @@ class UsbTransfer(Module):
         self.sta  = Signal()
         self.addr = Signal(7)       # If the address doesn't match, we won't respond
 
-        # ----------------------
         # Tristate
-        # ----------------------
         self.submodules.iobuf = iobuf
         self.comb += [
             rx.i_usbp.eq(iobuf.usb_p_rx),
@@ -12074,10 +10872,10 @@ class CSRTransform(ModuleTransformer):
                 # .re is used to determine when .storage has been updated.
                 # so we need to create delayed re signal, we'll rename this to re0
                 setattr(c, "re0", c.re)
-                setattr(c.re0, "name", c.name + '_re0')
+                setattr(c.re0, "name", c.name + "_re0")
 
                 # Our personal .re signal will then update .re0 alongside .storage
-                setattr(c, "re", Signal(name=c.name + '_re'))
+                setattr(c, "re", Signal(name=c.name + "_re"))
                 c.sync += c.re0.eq(c.re)
 
                 if hasattr(c, "fields"):
@@ -12145,8 +10943,6 @@ class CDCUsb(Module, AutoCSR):
 
         # TX
         tx_fifo = ClockDomainsRenamer({"write":"sys","read":"usb_12"})(AsyncFIFO([("data", 8)], 4, buffered=False))
-        #tx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(AsyncFIFO([("data", 8)], 4, buffered=False)))
-        #tx_fifo = SyncFIFO([("data", 8)], 4, buffered=True)
         self.submodules += tx_fifo
 
         self.comb += [
@@ -12160,8 +10956,6 @@ class CDCUsb(Module, AutoCSR):
 
         # RX
         rx_fifo = ClockDomainsRenamer({"write":"usb_12","read":"sys"})(AsyncFIFO([("data", 8)], 4, buffered=False))
-        #rx_fifo = ResetInserter()(ClockDomainsRenamer({"write":"sys","read":"sys"})(AsyncFIFO([("data", 8)], 4, buffered=False)))
-        #rx_fifo = SyncFIFO([("data", 8)], 4, buffered=True)
         self.submodules += rx_fifo
 
         self.comb += [
@@ -12602,15 +11396,8 @@ class CDCUsbPHY(Module):
 CPU_VARIANTS = ["minimal", "standard"]
 
 GCC_FLAGS = {
-    #                               /-------- Base ISA
-    #                               |/------- Hardware Multiply + Divide
-    #                               ||/----- Atomics
-    #                               |||/---- Compressed ISA
-    #                               ||||/--- Single-Precision Floating-Point
-    #                               |||||/-- Double-Precision Floating-Point
-    #                               imacfd
-    "minimal":          "-march=rv32i      -mabi=ilp32 ",
-    "standard":         "-march=rv32im     -mabi=ilp32 ",
+    "minimal":  "-march=rv32i  -mabi=ilp32 ",
+    "standard": "-march=rv32im -mabi=ilp32 ",
 }
 
 class PicoRV32(Module):
@@ -12775,14 +11562,8 @@ def SoCConstant(value):
 
 class SoCRegion:
     def __init__(self, origin=None, size=None, mode="rw", cached=True, linker=False):
-        self.logger    = logging.getLogger("SoCRegion")
         self.origin    = origin
         self.size      = size
-        if size != 2**log2_int(size, False):
-            self.logger.info("Region size {} internally from {} to {}.".format(
-                colorer("rounded", color="cyan"),
-                colorer("0x{:08x}".format(size)),
-                colorer("0x{:08x}".format(2**log2_int(size, False)))))
         self.size_pow2 = 2**log2_int(size, False)
         self.mode      = mode
         self.cached    = cached
@@ -12792,23 +11573,10 @@ class SoCRegion:
         origin = self.origin
         size   = self.size_pow2
         if (origin & (size - 1)) != 0:
-            self.logger.error("Origin needs to be aligned on size:")
-            self.logger.error(self)
             raise
-        origin >>= int(math.log2(bus.data_width//8)) # bytes to words aligned
-        size   >>= int(math.log2(bus.data_width//8)) # bytes to words aligned
+        origin >>= int(math.log2(bus.data_width // 8)) # bytes to words aligned
+        size   >>= int(math.log2(bus.data_width // 8)) # bytes to words aligned
         return lambda a: (a[log2_int(size):] == (origin >> log2_int(size)))
-
-    def __str__(self):
-        r = ""
-        if self.origin is not None:
-            r += "Origin: {}, ".format(colorer("0x{:08x}".format(self.origin)))
-        if self.size is not None:
-            r += "Size: {}, ".format(colorer("0x{:08x}".format(self.size)))
-        r += "Mode: {}, ".format(colorer(self.mode.upper()))
-        r += "Cached: {} ".format(colorer(self.cached))
-        r += "Linker: {}".format(colorer(self.linker))
-        return r
 
 class SoCIORegion(SoCRegion): pass
 
@@ -12824,30 +11592,17 @@ class SoCBusHandler(Module):
     supported_address_width = [32]
 
     def __init__(self, standard, data_width=32, address_width=32, timeout=1e6, reserved_regions={}):
-        self.logger = logging.getLogger("SoCBusHandler")
 
         # Check Standard
         if standard not in self.supported_standard:
-            self.logger.error("Unsupported {} {}, supporteds: {:s}".format(
-                colorer("Bus standard", color="red"),
-                colorer(standard),
-                colorer(", ".join(self.supported_standard))))
             raise
 
         # Check Data Width
         if data_width not in self.supported_data_width:
-            self.logger.error("Unsupported {} {}, supporteds: {:s}".format(
-                colorer("Data Width", color="red"),
-                colorer(data_width),
-                colorer(", ".join(str(x) for x in self.supported_data_width))))
             raise
 
         # Check Address Width
         if address_width not in self.supported_address_width:
-            self.logger.error("Unsupported {} {}, supporteds: {:s}".format(
-                colorer("Address Width", color="red"),
-                colorer(data_width),
-                colorer(", ".join(str(x) for x in self.supported_address_width))))
             raise
 
         # Create Bus
@@ -12859,7 +11614,6 @@ class SoCBusHandler(Module):
         self.regions       = {}
         self.io_regions    = {}
         self.timeout       = timeout
-        self.logger.info("{}-bit {} Bus, {}GiB Address Space.".format(colorer(data_width), colorer(standard), colorer(2**address_width/2**30)))
 
         # Adding reserved regions
         for name, region in reserved_regions.items():
@@ -12870,19 +11624,13 @@ class SoCBusHandler(Module):
     def add_region(self, name, region):
         allocated = False
         if name in self.regions.keys() or name in self.io_regions.keys():
-            self.logger.error("{} already declared as Region:".format(colorer(name, color="red")))
-            self.logger.error(self)
             raise
         # Check if SoCIORegion
         if isinstance(region, SoCIORegion):
             self.io_regions[name] = region
             overlap = self.check_regions_overlap(self.io_regions)
             if overlap is not None:
-                self.logger.error("IO Region {} between {} and {}:".format(colorer("overlap", color="red"), colorer(overlap[0]), colorer(overlap[1])))
-                self.logger.error(str(self.io_regions[overlap[0]]))
-                self.logger.error(str(self.io_regions[overlap[1]]))
                 raise
-            self.logger.info("{} Region {} at {}.".format(colorer(name, color="underline"), colorer("added", color="green"), str(region)))
         # Check if SoCRegion
         elif isinstance(region, SoCRegion):
             # If no origin specified, allocate region.
@@ -12894,32 +11642,15 @@ class SoCBusHandler(Module):
             else:
                 if not region.cached:
                     if not self.check_region_is_io(region):
-                        self.logger.error("{} Region {}: {}.".format(
-                            colorer(name),
-                            colorer("not in IO region", color="red"),
-                            str(region)))
-                        self.logger.error(self)
                         raise
                 self.regions[name] = region
                 overlap = self.check_regions_overlap(self.regions)
                 if overlap is not None:
-                    self.logger.error("Region {} between {} and {}:".format(
-                        colorer("overlap", color="red"),
-                        colorer(overlap[0]),
-                        colorer(overlap[1])))
-                    self.logger.error(str(self.regions[overlap[0]]))
-                    self.logger.error(str(self.regions[overlap[1]]))
                     raise
-            self.logger.info("{} Region {} at {}.".format(
-                colorer(name, color="underline"),
-                colorer("allocated" if allocated else "added", color="cyan" if allocated else "green"),
-                str(region)))
         else:
-            self.logger.error("{} is not a supported Region.".format(colorer(name, color="red")))
             raise
 
     def alloc_region(self, name, size, cached=True):
-        self.logger.info("Allocating {} Region of size {}...".format(colorer("Cached" if cached else "IO"), colorer("0x{:08x}".format(size))))
 
         # Limit Search Regions
         if cached == False:
@@ -12944,7 +11675,6 @@ class SoCBusHandler(Module):
                     # If no overlap, the Candidate is selected
                     return candidate
 
-        self.logger.error("Not enough Address Space to allocate Region.")
         raise
 
     def check_regions_overlap(self, regions, check_linker=False):
@@ -12993,87 +11723,33 @@ class SoCBusHandler(Module):
         else:
             raise TypeError(interface)
 
-        fmt = "{name} Bus {converted} from {frombus} {frombits}-bit to {tobus} {tobits}-bit."
-        frombus  = "Wishbone" if isinstance(interface, WishboneInterface) else "AXILite"
-        tobus    = "Wishbone" if isinstance(new_interface, WishboneInterface) else "AXILite"
-        frombits = interface.data_width
-        tobits   = new_interface.data_width
-        if frombus != tobus or frombits != tobits:
-            self.logger.info(fmt.format(
-                name      = colorer(name),
-                converted = colorer("converted", color="cyan"),
-                frombus   = colorer("Wishbone" if isinstance(interface, WishboneInterface) else "AXILite"),
-                frombits  = colorer(interface.data_width),
-                tobus     = colorer("Wishbone" if isinstance(new_interface, WishboneInterface) else "AXILite"),
-                tobits    = colorer(new_interface.data_width)))
         return new_interface
 
     def add_master(self, name=None, master=None):
         if name is None:
             name = "master{:d}".format(len(self.masters))
         if name in self.masters.keys():
-            self.logger.error("{} {} as Bus Master:".format(
-                colorer(name),
-                colorer("already declared", color="red")))
-            self.logger.error(self)
             raise
         master = self.add_adapter(name, master, "m2s")
         self.masters[name] = master
-        self.logger.info("{} {} as Bus Master.".format(
-            colorer(name,    color="underline"),
-            colorer("added", color="green")))
 
     def add_slave(self, name=None, slave=None, region=None):
         no_name   = name is None
         no_region = region is None
         if no_name and no_region:
-            self.logger.error("Please {} {} or/and {} of Bus Slave.".format(
-                colorer("specify", color="red"),
-                colorer("name"),
-                colorer("region")))
             raise
         if no_name:
             name = "slave{:d}".format(len(self.slaves))
         if no_region:
             region = self.regions.get(name, None)
             if region is None:
-                self.logger.error("{} Region {}.".format(
-                    colorer(name),
-                    colorer("not found", color="red")))
                 raise
         else:
              self.add_region(name, region)
         if name in self.slaves.keys():
-            self.logger.error("{} {} as Bus Slave:".format(
-                colorer(name),
-                colorer("already declared", color="red")))
-            self.logger.error(self)
             raise
         slave = self.add_adapter(name, slave, "s2m")
         self.slaves[name] = slave
-        self.logger.info("{} {} as Bus Slave.".format(
-            colorer(name, color="underline"),
-            colorer("added", color="green")))
-
-    def __str__(self):
-        r = "{}-bit {} Bus, {}GiB Address Space.\n".format(
-            colorer(self.data_width), colorer(self.standard), colorer(2**self.address_width/2**30))
-        r += "IO Regions: ({})\n".format(len(self.io_regions.keys())) if len(self.io_regions.keys()) else ""
-        io_regions = {k: v for k, v in sorted(self.io_regions.items(), key=lambda item: item[1].origin)}
-        for name, region in io_regions.items():
-           r += colorer(name, color="underline") + " "*(20-len(name)) + ": " + str(region) + "\n"
-        r += "Bus Regions: ({})\n".format(len(self.regions.keys())) if len(self.regions.keys()) else ""
-        regions = {k: v for k, v in sorted(self.regions.items(), key=lambda item: item[1].origin)}
-        for name, region in regions.items():
-           r += colorer(name, color="underline") + " "*(20-len(name)) + ": " + str(region) + "\n"
-        r += "Bus Masters: ({})\n".format(len(self.masters.keys())) if len(self.masters.keys()) else ""
-        for name in self.masters.keys():
-           r += "- {}\n".format(colorer(name, color="underline"))
-        r += "Bus Slaves: ({})\n".format(len(self.slaves.keys())) if len(self.slaves.keys()) else ""
-        for name in self.slaves.keys():
-           r += "- {}\n".format(colorer(name, color="underline"))
-        r = r[:-1]
-        return r
 
 class SoCLocHandler(Module):
     def __init__(self, name, n_locs):
@@ -13085,49 +11761,26 @@ class SoCLocHandler(Module):
         allocated = False
         if not (use_loc_if_exists and name in self.locs.keys()):
             if name in self.locs.keys():
-                self.logger.error("{} {} name {}.".format(colorer(name), self.name, colorer("already used", color="red")))
-                self.logger.error(self)
                 raise
             if n in self.locs.values():
-                self.logger.error("{} {} Location {}.".format(colorer(n), self.name, colorer("already used", color="red")))
-                self.logger.error(self)
                 raise
             if n is None:
                 allocated = True
                 n = self.alloc(name)
             else:
                 if n < 0:
-                    self.logger.error("{} {} Location should be {}.".format(colorer(n), self.name, colorer("positive", color="red")))
                     raise
                 if n > self.n_locs:
-                    self.logger.error("{} {} Location {} than maximum: {}.".format(colorer(n), self.name, colorer("higher", color="red"), colorer(self.n_locs)))
                     raise
             self.locs[name] = n
         else:
             n = self.locs[name]
-        self.logger.info("{} {} {} at Location {}.".format(
-            colorer(name, color="underline"),
-            self.name,
-            colorer("allocated" if allocated else "added", color="cyan" if allocated else "green"),
-            colorer(n)))
 
     def alloc(self, name):
         for n in range(self.n_locs):
             if n not in self.locs.values():
                 return n
-        self.logger.error("Not enough Locations.")
-        self.logger.error(self)
         raise
-
-    def __str__(self):
-        r = "{} Locations: ({})\n".format(self.name, len(self.locs.keys())) if len(self.locs.keys()) else ""
-        locs = {k: v for k, v in sorted(self.locs.items(), key=lambda item: item[1])}
-        length = 0
-        for name in locs.keys():
-            if len(name) > length: length = len(name)
-        for name in locs.keys():
-           r += "- {}{}: {}\n".format(colorer(name, color="underline"), " "*(length + 1 - len(name)), colorer(self.locs[name]))
-        return r
 
 class SoCCSRHandler(SoCLocHandler):
     supported_data_width    = [8, 32]
@@ -13137,44 +11790,23 @@ class SoCCSRHandler(SoCLocHandler):
 
     def __init__(self, data_width=32, address_width=14, alignment=32, paging=0x800, reserved_csrs={}):
         SoCLocHandler.__init__(self, "CSR", n_locs=alignment // 8 * (2**address_width) // paging)
-        self.logger = logging.getLogger("SoCCSRHandler")
 
         # Check Data Width
         if data_width not in self.supported_data_width:
-            self.logger.error("Unsupported {} {}, supporteds: {:s}".format(
-                colorer("Data Width", color="red"),
-                colorer(data_width),
-                colorer(", ".join(str(x) for x in self.supported_data_width))))
             raise
 
         # Check Address Width
         if address_width not in self.supported_address_width:
-            self.logger.error("Unsupported {} {} supporteds: {:s}".format(
-                colorer("Address Width", color="red"),
-                colorer(address_width),
-                colorer(", ".join(str(x) for x in self.supported_address_width))))
             raise
 
         # Check Alignment
         if alignment not in self.supported_alignment:
-            self.logger.error("Unsupported {}: {} supporteds: {:s}".format(
-                colorer("Alignment", color="red"),
-                colorer(alignment),
-                colorer(", ".join(str(x) for x in self.supported_alignment))))
             raise
         if data_width > alignment:
-            self.logger.error("Alignment ({}) {} Data Width ({})".format(
-                colorer(alignment),
-                colorer("should be >=", color="red"),
-                colorer(data_width)))
             raise
 
         # Check Paging
         if paging not in self.supported_paging:
-            self.logger.error("Unsupported {} 0x{}, supporteds: {:s}".format(
-                colorer("Paging", color="red"),
-                colorer("{:x}".format(paging)),
-                colorer(", ".join("0x{:x}".format(x) for x in self.supported_paging))))
             raise
 
         # Create CSR Handler
@@ -13184,12 +11816,6 @@ class SoCCSRHandler(SoCLocHandler):
         self.paging        = paging
         self.masters       = {}
         self.regions       = {}
-        self.logger.info("{}-bit CSR Bus, {}-bit Aligned, {}KiB Address Space, {}B Paging (Up to {} Locations).".format(
-            colorer(self.data_width),
-            colorer(self.alignment),
-            colorer(2**self.address_width/2**10),
-            colorer(self.paging),
-            colorer(self.n_locs)))
 
         # Adding reserved CSRs
         for name, n in reserved_csrs.items():
@@ -13199,18 +11825,10 @@ class SoCCSRHandler(SoCLocHandler):
         if name is None:
             name = "master{:d}".format(len(self.masters))
         if name in self.masters.keys():
-            self.logger.error("{} {} as CSR Master:".format(colorer(name), colorer("already declared", color="red")))
-            self.logger.error(self)
             raise
         if master.data_width != self.data_width:
-            self.logger.error("{} Master/Handler Data Width {} ({} vs {}).".format(
-                colorer(name),
-                colorer("missmatch", color="red"),
-                colorer(master.data_width),
-                colorer(self.data_width)))
             raise
         self.masters[name] = master
-        self.logger.info("{} {} as CSR Master.".format(colorer(name, color="underline"), colorer("added", color="green")))
 
     def add_region(self, name, region):
         # FIXME: add checks
@@ -13220,41 +11838,20 @@ class SoCCSRHandler(SoCLocHandler):
         if memory is not None:
             name = name + "_" + memory.name_override
         if self.locs.get(name, None) is None:
-            self.logger.error("CSR {} {}.".format(colorer(name), colorer("not found", color="red")))
-            self.logger.error(self)
             raise
         return self.locs[name]
-
-    def __str__(self):
-        r = "{}-bit CSR Bus, {}-bit Aligned, {}KiB Address Space, {}B Paging (Up to {} Locations).\n".format(
-            colorer(self.data_width),
-            colorer(self.alignment),
-            colorer(2**self.address_width/2**10),
-            colorer(self.paging),
-            colorer(self.n_locs))
-        r += SoCLocHandler.__str__(self)
-        r = r[:-1]
-        return r
 
 class SoCIRQHandler(SoCLocHandler):
     def __init__(self, n_irqs=32, reserved_irqs={}):
         SoCLocHandler.__init__(self, "IRQ", n_locs=n_irqs)
-        self.logger = logging.getLogger("SoCIRQHandler")
 
         # Check IRQ Number
         if n_irqs > 32:
-            self.logger.error("Unsupported IRQs number: {} supporteds: {:s}".format(colorer(n, color="red"), colorer("Up to 32", color="green")))
             raise
 
         # Adding reserved IRQs
         for name, n in reserved_irqs.items():
             self.add(name, n)
-
-    def __str__(self):
-        r ="IRQ Handler (up to {} Locations).\n".format(colorer(self.n_locs))
-        r += SoCLocHandler.__str__(self)
-        r = r[:-1]
-        return r
 
 class SoCController(Module, AutoCSR):
     def __init__(self, with_reset = True, with_scratch = True, with_errors = True):
@@ -13306,23 +11903,12 @@ class IOStandard:
     def __repr__(self):
         return "{}('{}')".format(self.__class__.__name__, self.name)
 
-class Drive:
-    def __init__(self, strength):
-        self.strength = strength
-
-    def __repr__(self):
-        return "{}('{}')".format(self.__class__.__name__, self.strength)
-
 class Misc:
     def __init__(self, misc):
         self.misc = misc
 
     def __repr__(self):
         return "{}({})".format(self.__class__.__name__, repr(self.misc))
-
-class Inverted:
-    def __repr__(self):
-        return "{}()".format(self.__class__.__name__)
 
 class Subsignal:
     def __init__(self, name, *constraints):
@@ -13331,13 +11917,6 @@ class Subsignal:
 
     def __repr__(self):
         return "{}('{}', {})".format(self.__class__.__name__, self.name, ", ".join([repr(constr) for constr in self.constraints]))
-
-class PlatformInfo:
-    def __init__(self, info):
-        self.info = info
-
-    def __repr__(self):
-        return "{}({})".format(self.__class__.__name__, repr(self.info))
 
 def _format_constraint(c):
     if isinstance(c, Pins):
@@ -13383,8 +11962,7 @@ def _yosys_import_sources(platform):
     for path in platform.verilog_include_paths:
         includes += " -I" + path
     for filename, language, library in platform.sources:
-        reads.append("read_{}{} {}".format(
-            language, includes, filename))
+        reads.append("read_{}{} {}".format(language, includes, filename))
     return "\n".join(reads)
 
 def _build_yosys(template, platform, nowidelut, build_name):
@@ -13458,69 +12036,6 @@ def _build_script(source, build_template, build_name, architecture, package, spe
 
     return script_file
 
-class InferedSDRIO(Module):
-    def __init__(self, i, o, clk):
-        self.clock_domains.cd_sdrio = ClockDomain("cd_sdrio", reset_less=True)
-        self.comb += self.cd_sdrio.clk.eq(clk)
-        self.sync.sdrio += o.eq(i)
-
-class SDRIO(Special):
-    def __init__(self, i, o, clk=ClockSignal()):
-        assert len(i) == len(o) == 1
-        Special.__init__(self)
-        self.i            = wrap(i)
-        self.o            = wrap(o)
-        self.clk          = wrap(clk)
-        self.clk_domain   = None if not hasattr(clk, "cd") else clk.cd
-
-    def iter_expressions(self):
-        yield self, "i",   SPECIAL_INPUT
-        yield self, "o",   SPECIAL_OUTPUT
-        yield self, "clk", SPECIAL_INPUT
-
-    @staticmethod
-    def lower(dr):
-        return InferedSDRIO(dr.i, dr.o, dr.clk, dr.clk_domain)
-
-class SDRInput(SDRIO):  pass
-class SDROutput(SDRIO): pass
-
-class DDRInput(Special):
-    def __init__(self, i, o1, o2, clk=ClockSignal()):
-        Special.__init__(self)
-        self.i   = wrap(i)
-        self.o1  = wrap(o1)
-        self.o2  = wrap(o2)
-        self.clk = wrap(clk)
-
-    def iter_expressions(self):
-        yield self, "i", SPECIAL_INPUT
-        yield self, "o1", SPECIAL_OUTPUT
-        yield self, "o2", SPECIAL_OUTPUT
-        yield self, "clk", SPECIAL_INPUT
-
-    @staticmethod
-    def lower(dr):
-        raise NotImplementedError("Attempted to use a DDR input, but platform does not support them")
-
-class DDROutput(Special):
-    def __init__(self, i1, i2, o, clk=ClockSignal()):
-        Special.__init__(self)
-        self.i1  = i1
-        self.i2  = i2
-        self.o   = o
-        self.clk = clk
-
-    def iter_expressions(self):
-        yield self, "i1", SPECIAL_INPUT
-        yield self, "i2", SPECIAL_INPUT
-        yield self, "o", SPECIAL_OUTPUT
-        yield self, "clk", SPECIAL_INPUT
-
-    @staticmethod
-    def lower(dr):
-        raise NotImplementedError("Attempted to use a DDR output, but platform does not support them")
-
 class LatticeECP5AsyncResetSynchronizerImpl(Module):
     def __init__(self, cd, async_reset):
         rst1 = Signal()
@@ -13542,64 +12057,6 @@ class LatticeECP5AsyncResetSynchronizer:
     def lower(dr):
         return LatticeECP5AsyncResetSynchronizerImpl(dr.cd, dr.async_reset)
 
-class LatticeECP5SDRInputImpl(Module):
-    def __init__(self, i, o, clk):
-        self.specials += Instance("IFS1P3BX",
-            i_SCLK = clk,
-            i_PD   = 0,
-            i_SP   = 1,
-            i_D    = i,
-            o_Q    = o,
-        )
-
-class LatticeECP5SDRInput:
-    @staticmethod
-    def lower(dr):
-        return LatticeECP5SDRInputImpl(dr.i, dr.o, dr.clk)
-
-class LatticeECP5SDROutputImpl(Module):
-    def __init__(self, i, o, clk):
-        self.specials += Instance("OFS1P3BX",
-            i_SCLK = clk,
-            i_PD   = 0,
-            i_SP   = 1,
-            i_D    = i,
-            o_Q    = o,
-        )
-
-class LatticeECP5SDROutput:
-    @staticmethod
-    def lower(dr):
-        return LatticeECP5SDROutputImpl(dr.i, dr.o, dr.clk)
-
-class LatticeECP5DDRInputImpl(Module):
-    def __init__(self, i, o1, o2, clk):
-        self.specials += Instance("IDDRX1F",
-            i_SCLK = clk,
-            i_D    = i,
-            o_Q0   = o1,
-            o_Q1   = o2,
-        )
-
-class LatticeECP5DDRInput:
-    @staticmethod
-    def lower(dr):
-        return LatticeECP5DDRInputImpl(dr.i, dr.o1, dr.o2, dr.clk)
-
-class LatticeECP5DDROutputImpl(Module):
-    def __init__(self, i1, i2, o, clk):
-        self.specials += Instance("ODDRX1F",
-            i_SCLK = clk,
-            i_D0   = i1,
-            i_D1   = i2,
-            o_Q    = o,
-        )
-
-class LatticeECP5DDROutput:
-    @staticmethod
-    def lower(dr):
-        return LatticeECP5DDROutputImpl(dr.i1, dr.i2, dr.o, dr.clk)
-
 class LatticeECP5TrellisTristateImpl(Module):
     def __init__(self, io, o, oe, i):
         nbits, sign = value_bits_sign(io)
@@ -13620,10 +12077,6 @@ class LatticeECP5TrellisTristate(Module):
 lattice_ecp5_trellis_special_overrides = {
     AsyncResetSynchronizer: LatticeECP5AsyncResetSynchronizer,
     Tristate:               LatticeECP5TrellisTristate,
-    SDRInput:               LatticeECP5SDRInput,
-    SDROutput:              LatticeECP5SDROutput,
-    DDRInput:               LatticeECP5DDRInput,
-    DDROutput:              LatticeECP5DDROutput
 }
 
 class LatticeTrellisToolchain:
@@ -13723,8 +12176,6 @@ def _resource_type(resource):
                 if isinstance(c, Pins):
                     assert(n_bits is None)
                     n_bits = len(c.identifiers)
-                if isinstance(c, Inverted):
-                    inverted = True
 
             t.append((element.name, n_bits))
             i.append((element.name, inverted))
@@ -13798,14 +12249,6 @@ class ConstraintManager:
             for name, inverted in ri:
                 if inverted:
                     getattr(obj, name).inverted = True
-
-        for element in resource[2:]:
-            if isinstance(element, Inverted):
-                if isinstance(obj, Signal):
-                    obj.inverted = True
-            if isinstance(element, PlatformInfo):
-                obj.platform_info = element.info
-                break
 
         self.available.remove(resource)
         self.matched.append((resource, obj))
@@ -13906,34 +12349,6 @@ _connectors_r0_2 = [
     ("GPIO", "N17 M18 C10 C9 - B10 B9 - - C8 B8 A8 H2 J2 N15 R17 N16 - L4 N3 N4 H4 G4 T17"),
 ]
 
-def register_clkin_log(logger, clkin, freq):
-    logger.info("Registering {} {} of {}.".format(
-        colorer("Differential") if isinstance(clkin, Record) else colorer("Single Ended"),
-        colorer("ClkIn"),
-        colorer("{:3.2f}MHz".format(freq / 1e6))
-    ))
-
-def create_clkout_log(logger, name, freq, margin, nclkouts):
-    logger.info("Creating {} of {} {}.".format(
-        colorer("ClkOut{} {}".format(nclkouts, name)),
-        colorer("{:3.2f}MHz".format(freq / 1e6)),
-        "(+-{:3.2f}ppm)".format(margin * 1e6),
-    ))
-
-def compute_config_log(logger, config):
-    log    = "Config:\n"
-    length = 0
-    for name in config.keys():
-        if len(name) > length: length = len(name)
-    for name, value in config.items():
-        if "freq" in name or "vco" in name:
-            value = "{:3.2f}MHz".format(value / 1e6)
-        if "phase" in name:
-            value = "{:3.2f}°".format(value)
-        log += "{}{}: {}\n".format(name, " "*(length-len(name)), value)
-    log = log[:-1]
-    logger.info(log)
-
 class ECP5PLL(Module):
     nclkouts_max    = 3
     clki_div_range  = (1, 128+1)
@@ -13944,8 +12359,6 @@ class ECP5PLL(Module):
     vco_freq_range  = (  400e6,  800e6)
 
     def __init__(self):
-        self.logger = logging.getLogger("ECP5PLL")
-        self.logger.info("Creating ECP5PLL.")
         self.reset      = Signal()
         self.locked     = Signal()
         self.clkin_freq = None
@@ -13965,7 +12378,6 @@ class ECP5PLL(Module):
         else:
             raise ValueError
         self.clkin_freq = freq
-        register_clkin_log(self.logger, clkin, freq)
 
     def create_clkout(self, cd, freq, phase=0, margin=1e-2):
         (clko_freq_min, clko_freq_max) = self.clko_freq_range
@@ -13975,7 +12387,6 @@ class ECP5PLL(Module):
         clkout = Signal()
         self.clkouts[self.nclkouts] = (clkout, freq, phase, margin)
         self.comb += cd.clk.eq(clkout)
-        create_clkout_log(self.logger, cd.name, freq, margin, self.nclkouts)
         self.nclkouts += 1
 
     def compute_config(self):
@@ -14004,7 +12415,6 @@ class ECP5PLL(Module):
                 if all_valid:
                     config["vco"] = vco_freq
                     config["clkfb_div"] = clkfb_div
-                    compute_config_log(self.logger, config)
                     return config
         raise ValueError("No PLL config found")
 
@@ -14223,9 +12633,8 @@ class OrangeCrab:
         return named_sc, named_pc
 
     def get_verilog(self, fragment, **kwargs):
-        return convert(fragment,
+        return to_verilog(fragment,
             self.constraint_manager.get_io_signals(),
-            create_clock_domains=False,
             special_overrides=self.toolchain.special_overrides,
             attr_translate=self.toolchain.attr_translate,
             **kwargs)
@@ -14289,11 +12698,6 @@ class Waltraud(Module):
             reserved_irqs = irq_reserved_irqs,
         )
 
-        self.logger = logging.getLogger("Waltraud")
-        self.logger.info("FPGA device : {}.".format(self.platform.device))
-        self.logger.info("System clock: {:3.2f}MHz.".format(self.sys_clk_freq / 1e6))
-        self.logger.info(colorer("-"*80, color="bright"))
-
         self.constants = {}
         self.add_config("CLOCK_FREQUENCY", int(self.sys_clk_freq))
 
@@ -14348,7 +12752,6 @@ class Waltraud(Module):
     def add_constant(self, name, value=None):
         name = name.upper()
         if name in self.constants.keys():
-            self.logger.error("{} Constant already {}.".format(colorer(name), colorer("declared", color="red")))
             raise
         self.constants[name] = SoCConstant(value)
 
@@ -14440,12 +12843,6 @@ class Waltraud(Module):
         self.submodules.wishbone_bridge = LiteDRAMWishbone2Native(litedram_wb, port, base_address = self.bus.regions["main_ram"].origin)
 
     def do_finalize(self):
-        self.logger.info(colorer("-"*80, color="bright"))
-        self.logger.info(self.bus)
-        self.logger.info(self.csr)
-        self.logger.info(self.irq)
-        self.logger.info(colorer("-"*80, color="bright"))
-
         if len(self.bus.masters) and len(self.bus.slaves):
             # If 1 bus_master, 1 bus_slave and no address translation, use InterconnectPointToPoint.
             if ((len(self.bus.masters) == 1) and (len(self.bus.slaves) == 1) and (next(iter(self.bus.regions.values())).origin == 0)):
@@ -14464,7 +12861,6 @@ class Waltraud(Module):
                 if hasattr(self, "ctrl") and self.bus.timeout is not None:
                     if hasattr(self.ctrl, "bus_error"):
                         self.comb += self.ctrl.bus_error.eq(self.bus_interconnect.timeout.error)
-            self.bus.logger.info("Interconnect: {} ({} <-> {}).".format(colorer(self.bus_interconnect.__class__.__name__), colorer(len(self.bus.masters)), colorer(len(self.bus.slaves))))
 
         self.add_constant("CONFIG_BUS_STANDARD",      self.bus.standard.upper())
         self.add_constant("CONFIG_BUS_DATA_WIDTH",    self.bus.data_width)
@@ -14502,17 +12898,12 @@ class Waltraud(Module):
         # Sort CSR regions by origin
         self.csr.regions = {k: v for k, v in sorted(self.csr.regions.items(), key=lambda item: item[1].origin)}
 
-        # Add CSRs / Config items to constants
-        for name, constant in self.csr_bankarray.constants:
-            self.add_constant(name + "_" + constant.name, constant.value.value)
-
         for name, loc in sorted(self.irq.locs.items()):
             if name in self.cpu.interrupts.keys():
                 continue
             if hasattr(self, name):
                 module = getattr(self, name)
                 if not hasattr(module, "ev"):
-                    self.logger.error("EventManager {} in {} SubModule.".format(colorer("not found", color="red"), colorer(name)))
                     raise
                 self.comb += self.cpu.interrupt[loc].eq(module.ev.irq)
             self.add_constant(name + "_INTERRUPT", loc)
