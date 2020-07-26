@@ -85,7 +85,7 @@ def value_bits_sign(v):
 
     Examples
     --------
-    >>> value_bits_sign(Signal(8))
+    >>> value_bits_sign(Signal("...", 8))
     8, False
     >>> value_bits_sign(Constant(0xaa))
     8, False
@@ -452,8 +452,10 @@ class Signal(_Value):
     attr : set of synthesis attributes
     """
 
-    def __init__(self, bits_sign=None, name=None, variable=False, reset=0, reset_less=False, name_override=None, min=None, max=None, related=None, attr=None):
+    def __init__(self, name, bits_sign=None, variable=False, reset=0, reset_less=False, min=None, max=None, related=None, attr=None):
         _Value.__init__(self)
+
+        self.name = name
 
         # determine number of bits and signedness
         if bits_sign is None:
@@ -478,11 +480,9 @@ class Signal(_Value):
         if attr is None:
             attr = set()
 
-        self.name = name
         self.variable = variable  # deprecated
         self.reset = reset
         self.reset_less = reset_less
-        self.name_override = name_override
         self.related = related
         self.attr = attr
 
@@ -492,7 +492,7 @@ class Signal(_Value):
         _Value.__setattr__(self, k, v)
 
     def __repr__(self):
-        return "<Signal " + (self.name_override or self.name or "anonymous") + " at " + hex(id(self)) + ">"
+        return "<Signal " + (self.name or "anonymous") + " at " + hex(id(self)) + ">"
 
     @classmethod
     def like(cls, other, **kwargs):
@@ -507,7 +507,7 @@ class Signal(_Value):
         if isinstance(other, cls):
             kw.update(variable=other.variable, reset=other.reset.value, reset_less=other.reset_less, related=other.related, attr=set(other.attr))
         kw.update(kwargs)
-        return cls(**kw)
+        return cls(None, **kw)
 
     def __hash__(self):
         return self.duid
@@ -578,10 +578,10 @@ class If(_Statement):
 
     Examples
     --------
-    >>> a = Signal()
-    >>> b = Signal()
-    >>> c = Signal()
-    >>> d = Signal()
+    >>> a = Signal("...")
+    >>> b = Signal("...")
+    >>> c = Signal("...")
+    >>> d = Signal("...")
     >>> If(a,
     ...     b.eq(1)
     ... ).Elif(c,
@@ -648,8 +648,8 @@ class Case(_Statement):
 
     Examples
     --------
-    >>> a = Signal()
-    >>> b = Signal()
+    >>> a = Signal("...")
+    >>> b = Signal("...")
     >>> Case(a, {
     ...     0:         b.eq(1),
     ...     1:         b.eq(0),
@@ -732,8 +732,8 @@ class Array(list):
     Examples
     --------
     >>> a = Array(range(10))
-    >>> b = Signal(max=10)
-    >>> c = Signal(max=10)
+    >>> b = Signal("...", max=10)
+    >>> c = Signal("...", max=10)
     >>> b.eq(a[9 - c])
     """
     def __getitem__(self, key):
@@ -776,11 +776,11 @@ class ClockDomain:
             self.name = self.name[3:]
         if self.name[0].isdigit():
             raise ValueError("Clock domain name cannot start with a number.")
-        self.clk = Signal(name_override=self.name + "_clk")
+        self.clk = Signal(self.name + "_clk")
         if reset_less:
             self.rst = None
         else:
-            self.rst = Signal(name_override=self.name + "_rst")
+            self.rst = Signal(self.name + "_rst")
 
     def rename(self, new_name):
         """Rename the clock domain
@@ -791,9 +791,9 @@ class ClockDomain:
             New name
         """
         self.name = new_name
-        self.clk.name_override = new_name + "_clk"
+        self.clk.name = new_name + "_clk"
         if self.rst is not None:
-            self.rst.name_override = new_name + "_rst"
+            self.rst.name = new_name + "_rst"
 
 class _ClockDomainList(list):
     def __getitem__(self, key):
@@ -1236,7 +1236,7 @@ class _BasicLowerer(_Lowerer):
 
     def visit_ArrayProxy(self, node):
         # TODO: rewrite without variables
-        array_muxed = Signal(value_bits_sign(node), variable=True)
+        array_muxed = Signal("array_muxed", value_bits_sign(node), variable=True)
         if self.target_context:
             k = self.visit(node.key)
             cases = {}
@@ -1264,7 +1264,7 @@ class _BasicLowerer(_Lowerer):
 class _ComplexSliceLowerer(_Lowerer):
     def visit_Slice(self, node):
         if not isinstance(node.value, Signal):
-            slice_proxy = Signal(value_bits_sign(node.value))
+            slice_proxy = Signal("slice_proxy", value_bits_sign(node.value))
             if self.target_context:
                 a = _Assign(node.value, slice_proxy)
             else:
@@ -1573,13 +1573,13 @@ class ControlInserter(ModuleTransformer):
 
     def transform_instance(self, i):
         if self.clock_domains is None:
-            ctl = Signal(name=self.control_name)
+            ctl = Signal(self.control_name)
             assert not hasattr(i, self.control_name)
             setattr(i, self.control_name, ctl)
         else:
             for cd in self.clock_domains:
                 name = self.control_name + "_" + cd
-                ctl = Signal(name=name)
+                ctl = Signal(name)
                 assert not hasattr(i, name)
                 setattr(i, name, ctl)
 
@@ -1710,9 +1710,9 @@ class Tristate(Special):
 
 class TSTriple:
     def __init__(self, bits_sign=None, min=None, max=None, reset_o=0, reset_oe=0, reset_i=0, name=None):
-        self.o = Signal(bits_sign, min=min, max=max, reset=reset_o, name=None if name is None else name + "_o")
-        self.oe = Signal(reset=reset_oe, name=None if name is None else name + "_oe")
-        self.i = Signal(bits_sign, min=min, max=max, reset=reset_i, name=None if name is None else name + "_i")
+        self.o = Signal(None if name is None else name + "_o", bits_sign, min=min, max=max, reset=reset_o)
+        self.oe = Signal(None if name is None else name + "_oe", reset=reset_oe)
+        self.i = Signal(None if name is None else name + "_i", bits_sign, min=min, max=max, reset=reset_i)
 
     def get_tristate(self, target):
         return Tristate(target, self.o, self.oe, self.i)
@@ -1725,7 +1725,7 @@ class Instance(Special):
         def __init__(self, name, expr=None):
             self.name = name
             if expr is None:
-                expr = Signal()
+                expr = Signal("expr")
             self.expr = wrap(expr)
     class Input(_IO):
         pass
@@ -1746,9 +1746,9 @@ class Instance(Special):
         Special.__init__(self)
         self.of = of
         if name:
-            self.name_override = name
+            self.name = name
         else:
-            self.name_override = of
+            self.name = of
         self.items = list(items)
         self.synthesis_directive = synthesis_directive
         if attr is None:
@@ -1863,24 +1863,24 @@ class Memory(Special):
         self.depth = depth
         self.ports = []
         self.init = init
-        self.name_override = name or "mem"
+        self.name = name or "mem"
 
     def get_port(self, write_capable=False, async_read=False, has_re=False, we_granularity=0, mode=WRITE_FIRST, clock_domain="sys"):
         if we_granularity >= self.width:
             we_granularity = 0
-        adr = Signal(max=self.depth)
-        dat_r = Signal(self.width)
+        adr = Signal("adr", max=self.depth)
+        dat_r = Signal("dat_r", self.width)
         if write_capable:
             if we_granularity:
-                we = Signal(self.width // we_granularity)
+                we = Signal("we", self.width // we_granularity)
             else:
-                we = Signal()
-            dat_w = Signal(self.width)
+                we = Signal("we")
+            dat_w = Signal("dat_w", self.width)
         else:
             we = None
             dat_w = None
         if has_re:
-            re = Signal()
+            re = Signal("re")
         else:
             re = None
         mp = _MemoryPort(adr, dat_r, we, dat_w, async_read, re, we_granularity, mode, clock_domain)
@@ -1904,11 +1904,11 @@ class Memory(Special):
         for port in memory.ports:
             if not port.async_read:
                 if port.mode == WRITE_FIRST:
-                    adr_reg = Signal(name_override="memadr")
+                    adr_reg = Signal("memadr")
                     r += "reg [" + str(adrbits-1) + ":0] " + gn(adr_reg) + ";\n"
                     adr_regs[id(port)] = adr_reg
                 else:
-                    data_reg = Signal(name_override="memdat")
+                    data_reg = Signal("memdat")
                     r += "reg [" + str(memory.width-1) + ":0] " + gn(data_reg) + ";\n"
                     data_regs[id(port)] = data_reg
 
@@ -1985,7 +1985,7 @@ class FullMemoryWE(ModuleTransformer):
                         newinit = None
                     else:
                         newinit = [(v >> i*global_granularity) & (2**global_granularity - 1) for v in orig.init]
-                    newmem = Memory(orig.name_override + "_grain" + str(i), global_granularity, orig.depth, newinit)
+                    newmem = Memory(orig.name + "_grain" + str(i), global_granularity, orig.depth, newinit)
                     newspecials.add(newmem)
                     newmems.append(newmem)
                     for port in orig.ports:
@@ -2051,7 +2051,7 @@ def chooser(signal, shift, output, n=None, reverse=False):
 
 def timeline(trigger, events):
     lastevent = max([e[0] for e in events])
-    counter = Signal(max=lastevent+1)
+    counter = Signal("counter", max=lastevent+1)
 
     counterlogic = If(counter != 0,
         counter.eq(counter + 1)
@@ -2077,10 +2077,10 @@ def timeline(trigger, events):
 
 class WaitTimer(Module):
     def __init__(self, t):
-        self.wait = Signal()
-        self.done = Signal()
+        self.wait = Signal("wait")
+        self.done = Signal("done")
 
-        count = Signal(bits_for(t), reset=t)
+        count = Signal("count", bits_for(t), reset=t)
         self.comb += self.done.eq(count == 0)
         self.sync += \
             If(self.wait,
@@ -2099,17 +2099,17 @@ class OneHotEncoder(Module):
 
     Attributes
     ----------
-    i : Signal(width), in
+    i : Signal("...", width), in
         One-hot input
-    o : Signal(max=width), out
+    o : Signal("...", max=width), out
         Encoded binary
-    n : Signal(1), out
+    n : Signal("...", 1), out
         Invalid, either none or multiple input bits are asserted
     """
     def __init__(self, width):
-        self.i = Signal(width)  # one-hot
-        self.o = Signal(max=max(2, width))  # binary
-        self.n = Signal()  # invalid: none or multiple
+        self.i = Signal("i", width)  # one-hot
+        self.o = Signal("o", max=max(2, width))  # binary
+        self.n = Signal("n")  # invalid: none or multiple
         act = dict((1<<j, self.o.eq(j)) for j in range(width))
         act["default"] = self.n.eq(1)
         self.comb += Case(self.i, act)
@@ -2126,17 +2126,17 @@ class OneHotDecoder(Module):
 
     Attributes
     ----------
-    i : Signal(max=width), in
+    i : Signal("...", max=width), in
         Input binary
-    o : Signal(width), out
+    o : Signal("...", width), out
         Decoded one-hot
-    n : Signal(1), in
+    n : Signal("...", 1), in
         Invalid, no output bits are to be asserted
     """
     def __init__(self, width):
-        self.i = Signal(max=max(2, width))  # binary
-        self.n = Signal()  # none/invalid
-        self.o = Signal(width)  # one-hot
+        self.i = Signal("i", max=max(2, width))  # binary
+        self.n = Signal("n")  # none/invalid
+        self.o = Signal("o", width)  # one-hot
         act = dict((j, self.o.eq(1<<j)) for j in range(width))
         self.comb += Case(self.i, act)
         self.comb += If(self.n, self.o.eq(0))
@@ -2206,7 +2206,7 @@ class Record:
                     fname, fsize, fdirection = f
                 else:
                     fname, fsize = f
-                finst = Signal(fsize, name=prefix + fname, **kwargs)
+                finst = Signal(prefix + fname, fsize, **kwargs)
             elif isinstance(f[1], list):  # case 3
                 fname, fsublayout = f
                 finst = Record(fsublayout, prefix + fname, **kwargs)
@@ -2353,8 +2353,8 @@ class _LowerNext(NodeTransformer):
                 next_value_ce, next_value = self._get_register_control(node.target)
             except KeyError:
                 related = node.target if isinstance(node.target, Signal) else None
-                next_value = Signal(bits_sign=value_bits_sign(node.target), related=related)
-                next_value_ce = Signal(related=related)
+                next_value = Signal("next_value", bits_sign=value_bits_sign(node.target), related=related)
+                next_value_ce = Signal("next_value_ce", related=related)
                 self.registers.append((node.target, next_value_ce, next_value))
             return next_value.eq(node.value), next_value_ce.eq(1)
         else:
@@ -2374,8 +2374,8 @@ class FSM(Module):
     Examples
     --------
 
-    >>> self.active = Signal()
-    >>> self.bitno = Signal(3)
+    >>> self.active = Signal("...")
+    >>> self.bitno = Signal("...", 3)
     >>>
     >>> fsm = FSM(reset_state="START")
     >>> self.submodules += fsm
@@ -2447,7 +2447,7 @@ class FSM(Module):
 
     def ongoing(self, state):
         """Returns a signal that has the value 1 when the FSM is in the given `state`, and 0 otherwise."""
-        is_ongoing = Signal()
+        is_ongoing = Signal("is_ongoing")
         self.act(state, is_ongoing.eq(1))
         return is_ongoing
 
@@ -2457,7 +2457,7 @@ class FSM(Module):
         try:
             return d[state]
         except KeyError:
-            is_el = Signal()
+            is_el = Signal("is_el")
             d[state] = is_el
             return is_el
 
@@ -2482,9 +2482,9 @@ class FSM(Module):
         self.encoding = dict((s, n) for n, s in enumerate(self.actions.keys()))
         self.decoding = {n: s for s, n in self.encoding.items()}
 
-        self.state = Signal(max=nstates, reset=self.encoding[self.reset_state])
+        self.state = Signal("state", max=nstates, reset=self.encoding[self.reset_state])
         self.state._enumeration = self.decoding
-        self.next_state = Signal(max=nstates)
+        self.next_state = Signal("next_state", max=nstates)
         self.next_state._enumeration = {n: "{}:{}".format(n, s) for n, s in self.decoding.items()}
 
         # drive entering/leaving signals
@@ -2517,11 +2517,11 @@ class FSM(Module):
 
 class RoundRobin(Module):
     def __init__(self, n, switch_policy=SP_WITHDRAW):
-        self.request = Signal(n)
-        self.grant = Signal(max=max(2, n))
+        self.request = Signal("request", n)
+        self.grant = Signal("grant", max=max(2, n))
         self.switch_policy = switch_policy
         if self.switch_policy == SP_CE:
-            self.ce = Signal()
+            self.ce = Signal("ce")
 
         if n > 1:
             cases = {}
@@ -2574,7 +2574,7 @@ class MultiRegImpl(Module):
         self.odomain = odomain
 
         w, signed = value_bits_sign(self.i)
-        self.regs = [Signal((w, signed), reset=reset, reset_less=True) for i in range(n)]
+        self.regs = [Signal("regs", (w, signed), reset=reset, reset_less=True) for i in range(n)]
 
         sd = getattr(self.sync, self.odomain)
         src = self.i
@@ -2614,12 +2614,12 @@ class MultiReg(Special):
 
 class PulseSynchronizer(Module):
     def __init__(self, idomain, odomain):
-        self.i = Signal()
-        self.o = Signal()
+        self.i = Signal("i")
+        self.o = Signal("o")
 
-        toggle_i = Signal(reset_less=True)
-        toggle_o = Signal()  # registered reset_less by MultiReg
-        toggle_o_r = Signal(reset_less=True)
+        toggle_i = Signal("toggle_i", reset_less=True)
+        toggle_o = Signal("toggle_o")  # registered reset_less by MultiReg
+        toggle_o_r = Signal("toggle_o_r", reset_less=True)
 
         sync_i = getattr(self.sync, idomain)
         sync_o = getattr(self.sync, odomain)
@@ -2631,11 +2631,11 @@ class PulseSynchronizer(Module):
 
 class GrayCounter(Module):
     def __init__(self, width):
-        self.ce = Signal()
-        self.q = Signal(width)
-        self.q_next = Signal(width)
-        self.q_binary = Signal(width)
-        self.q_next_binary = Signal(width)
+        self.ce = Signal("ce")
+        self.q = Signal("q", width)
+        self.q_next = Signal("q_next", width)
+        self.q_binary = Signal("q_binary", width)
+        self.q_next_binary = Signal("q_next_binary", width)
 
         self.comb += [
             If(self.ce,
@@ -2652,10 +2652,10 @@ class GrayCounter(Module):
 
 class GrayDecoder(Module):
     def __init__(self, width):
-        self.i = Signal(width)
-        self.o = Signal(width, reset_less=True)
+        self.i = Signal("i", width)
+        self.o = Signal("o", width, reset_less=True)
 
-        o_comb = Signal(width)
+        o_comb = Signal("o_comb", width)
         self.comb += o_comb[-1].eq(self.i[-1])
         for i in reversed(range(width-1)):
             self.comb += o_comb[i].eq(o_comb[i+1] ^ self.i[i])
@@ -2699,32 +2699,15 @@ class _FIFOInterface:
         Acknowledge `dout`. If asserted, the next entry will be available on the next cycle (if `readable` is high then).
     """
     def __init__(self, width, depth):
-        self.we = Signal()
-        self.writable = Signal()  # not full
-        self.re = Signal()
-        self.readable = Signal()  # not empty
+        self.we = Signal("we")
+        self.writable = Signal("writable")  # not full
+        self.re = Signal("re")
+        self.readable = Signal("readable")  # not empty
 
-        self.din = Signal(width, reset_less=True)
-        self.dout = Signal(width, reset_less=True)
+        self.din = Signal("din", width, reset_less=True)
+        self.dout = Signal("dout", width, reset_less=True)
         self.width = width
         self.depth = depth
-
-    def read(self):
-        """Read method for simulation."""
-        value = (yield self.dout)
-        yield self.re.eq(1)
-        yield
-        yield self.re.eq(0)
-        yield
-        return value
-
-    def write(self, data):
-        """Write method for simulation."""
-        yield self.din.eq(data)
-        yield self.we.eq(1)
-        yield
-        yield self.we.eq(0)
-        yield
 
 class _SyncFIFO(Module, _FIFOInterface):
     """Synchronous FIFO (first in, first out)
@@ -2743,11 +2726,11 @@ class _SyncFIFO(Module, _FIFOInterface):
     def __init__(self, width, depth, fwft=True):
         _FIFOInterface.__init__(self, width, depth)
 
-        self.level = Signal(max=depth+1)
-        self.replace = Signal()
+        self.level = Signal("level", max=depth+1)
+        self.replace = Signal("replace")
 
-        produce = Signal(max=depth)
-        consume = Signal(max=depth)
+        produce = Signal("produce", max=depth)
+        consume = Signal("consume", max=depth)
         storage = Memory("storage", self.width, depth)
         self.specials += storage
 
@@ -2764,7 +2747,7 @@ class _SyncFIFO(Module, _FIFOInterface):
         ]
         self.sync += If(self.we & self.writable & ~self.replace, _inc(produce, depth))
 
-        do_read = Signal()
+        do_read = Signal("do_read")
         self.comb += do_read.eq(self.readable & self.re)
 
         rdport = storage.get_port(async_read=fwft, has_re=not fwft, mode=READ_FIRST)
@@ -2800,7 +2783,7 @@ class _SyncFIFOBuffered(Module, _FIFOInterface):
         self.din = fifo.din
         self.we = fifo.we
         self.dout = fifo.dout
-        self.level = Signal(max=depth+2)
+        self.level = Signal("level", max=depth+2)
 
         self.comb += fifo.re.eq(fifo.readable & (~self.readable | self.re))
         self.sync += \
@@ -2833,10 +2816,10 @@ class _AsyncFIFO(Module, _FIFOInterface):
             consume.ce.eq(self.readable & self.re)
         ]
 
-        produce_rdomain = Signal(depth_bits+1)
+        produce_rdomain = Signal("produce_rdomain", depth_bits+1)
         produce.q.attr.add("no_retiming")
         self.specials += MultiReg(produce.q, produce_rdomain, "read")
-        consume_wdomain = Signal(depth_bits+1)
+        consume_wdomain = Signal("consume_wdomain", depth_bits+1)
         consume.q.attr.add("no_retiming")
         self.specials += MultiReg(consume.q, consume_wdomain, "write")
         if depth_bits == 1:
@@ -2989,13 +2972,13 @@ class SyncFIFO(_FIFOWrapper):
             self.sink   = buf.sink
             self.source = buf.source
             self.depth  = 1
-            self.level  = Signal()
+            self.level  = Signal("level")
         elif depth == 0:
             self.sink   = Endpoint(layout)
             self.source = Endpoint(layout)
             self.comb += self.sink.connect(self.source)
             self.depth = 0
-            self.level = Signal()
+            self.level = Signal("level")
 
 class AsyncFIFO(_FIFOWrapper):
     def __init__(self, layout, depth=4, buffered=False):
@@ -3009,9 +2992,9 @@ class _UpConverter(Module):
         self.latency = 1
 
         # Control path
-        demux      = Signal(max=ratio)
-        load_part  = Signal()
-        strobe_all = Signal()
+        demux      = Signal("demux", max=ratio)
+        load_part  = Signal("load_part")
+        strobe_all = Signal("strobe_all")
         self.comb += [
             sink.ready.eq(~strobe_all | source.ready),
             source.valid.eq(strobe_all),
@@ -3061,9 +3044,9 @@ class _DownConverter(Module):
         self.latency = 0
 
         # Control path
-        mux   = Signal(max=ratio)
-        first = Signal()
-        last  = Signal()
+        mux   = Signal("mux", max=ratio)
+        first = Signal("first")
+        last  = Signal("last")
         self.comb += [
             first.eq(mux == 0),
             last.eq(mux == (ratio-1)),
@@ -3282,44 +3265,29 @@ class CSR(_CSRBase):
 
     Attributes
     ----------
-    r : Signal(size), out
+    r : Signal("...", size), out
         Contains the data written from the bus interface.
         ``r`` is only valid when ``re`` is high.
 
-    re : Signal(), out
+    re : Signal("..."), out
         The strobe signal for ``r``.
         It is active for one cycle, after or during a write from the bus.
 
-    w : Signal(size), in
+    w : Signal("...", size), in
         The value to be read from the bus.
         Must be provided at all times.
 
-    we : Signal(), out
+    we : Signal("..."), out
         The strobe signal for ``w``.
         It is active for one cycle, after or during a read from the bus.
     """
 
     def __init__(self, name, size=1):
         _CSRBase.__init__(self, name, size)
-        self.re = Signal(name=self.name + "_re")
-        self.r  = Signal(self.size, name=self.name + "_r")
-        self.we = Signal(name=self.name + "_we")
-        self.w  = Signal(self.size, name=self.name + "_w")
-
-    def read(self):
-        """Read method for simulation."""
-        yield self.we.eq(1)
-        value = (yield self.w)
-        yield
-        yield self.we.eq(0)
-        return value
-
-    def write(self, value):
-        """Write method for simulation."""
-        yield self.r.eq(value)
-        yield self.re.eq(1)
-        yield
-        yield self.re.eq(0)
+        self.re = Signal(self.name + "_re")
+        self.r  = Signal(self.name + "_r", self.size)
+        self.we = Signal(self.name + "_we")
+        self.w  = Signal(self.name + "_w", self.size)
 
 class _CompoundCSR(_CSRBase):
     def __init__(self, name, size):
@@ -3390,7 +3358,7 @@ class CSRField(Signal):
         self.access      = access
         self.pulse       = pulse
         self.values      = values
-        Signal.__init__(self, size, name=name, reset=reset)
+        Signal.__init__(self, name, size, reset=reset)
 
 class CSRFieldAggregate:
     """CSR Field Aggregate."""
@@ -3470,7 +3438,7 @@ class CSRStatus(_CompoundCSR, Module):
 
     Attributes
     ----------
-    status : Signal(size), in
+    status : Signal("...", size), in
         The value of the CSRStatus register.
     """
 
@@ -3481,8 +3449,8 @@ class CSRStatus(_CompoundCSR, Module):
             reset = self.fields.get_reset()
         _CompoundCSR.__init__(self, name, size)
         self.description = description
-        self.status = Signal(self.size, reset=reset)
-        self.we = Signal()
+        self.status = Signal("status", self.size, reset=reset)
+        self.we = Signal("we")
         for field in fields:
             self.comb += self.status[field.offset:field.offset + field.size].eq(getattr(self.fields, field.name))
 
@@ -3494,14 +3462,6 @@ class CSRStatus(_CompoundCSR, Module):
             self.comb += sc.w.eq(self.status[i*busword:i*busword+nbits])
             self.simple_csrs.append(sc)
         self.comb += self.we.eq(sc.we)
-
-    def read(self):
-        """Read method for simulation."""
-        yield self.we.eq(1)
-        value = (yield self.status)
-        yield
-        yield self.we.eq(0)
-        return value
 
 class CSRStorage(_CompoundCSR, Module):
     """Control Register.
@@ -3535,18 +3495,18 @@ class CSRStorage(_CompoundCSR, Module):
 
     Attributes
     ----------
-    storage : Signal(size), out
+    storage : Signal("...", size), out
         Signal providing the value of the ``CSRStorage`` object.
 
-    re : Signal(), in
+    re : Signal("..."), in
         The strobe signal indicating a write to the ``CSRStorage`` register from the CPU. It is active
         for one cycle, after or during a write from the bus.
 
-    we : Signal(), out
+    we : Signal("..."), out
         The strobe signal to write to the ``CSRStorage`` register from the logic. Only available when
         ``write_from_dev == True``
 
-    dat_w : Signal(), out
+    dat_w : Signal("..."), out
         The write data to write to the ``CSRStorage`` register from the logic. Only available when
         ``write_from_dev == True``
     """
@@ -3558,12 +3518,12 @@ class CSRStorage(_CompoundCSR, Module):
             reset = self.fields.get_reset()
         _CompoundCSR.__init__(self, name, size)
         self.description = description
-        self.storage = Signal(self.size, reset=reset, reset_less=reset_less)
+        self.storage = Signal("storage", self.size, reset=reset, reset_less=reset_less)
         self.atomic_write = atomic_write
-        self.re = Signal()
+        self.re = Signal("re")
         if write_from_dev:
-            self.we = Signal()
-            self.dat_w = Signal(self.size)
+            self.we = Signal("we")
+            self.dat_w = Signal("dat_w", self.size)
             self.sync += If(self.we, self.storage.eq(self.dat_w))
         for field in [*fields]:
             field_assign = getattr(self.fields, field.name).eq(self.storage[field.offset:field.offset + field.size])
@@ -3575,7 +3535,7 @@ class CSRStorage(_CompoundCSR, Module):
     def do_finalize(self, busword):
         nwords = (self.size + busword - 1) // busword
         if nwords > 1 and self.atomic_write:
-            backstore = Signal(self.size - busword, name=self.name + "_backstore")
+            backstore = Signal(self.name + "_backstore", self.size - busword)
         for i in reversed(range(nwords)):
             nbits = min(self.size - i*busword, busword)
             sc = CSR(self.name + str(i) if nwords else self.name, nbits)
@@ -3594,24 +3554,6 @@ class CSRStorage(_CompoundCSR, Module):
                 self.sync += If(sc.re, self.storage[lo:hi].eq(sc.r))
         self.sync += self.re.eq(sc.re)
 
-    def read(self):
-        """Read method for simulation."""
-        return (yield self.storage)
-
-    def write(self, value):
-        """Write method for simulation."""
-        yield self.storage.eq(value)
-        yield self.re.eq(1)
-        if hasattr(self, "fields"):
-            for field in [*self.fields.fields]:
-                yield getattr(self.fields, field.name).eq((value >> field.offset) & (2**field.size -1))
-        yield
-        yield self.re.eq(0)
-        if hasattr(self, "fields"):
-            for field in [*self.fields.fields]:
-                if field.pulse:
-                    yield getattr(self.fields, field.name).eq(0)
-
 def csrprefix(prefix, csrs, done):
     for csr in csrs:
         if csr.duid not in done:
@@ -3621,7 +3563,7 @@ def csrprefix(prefix, csrs, done):
 def memprefix(prefix, memories, done):
     for memory in memories:
         if memory.duid not in done:
-            memory.name_override = prefix + memory.name_override
+            memory.name = prefix + memory.name
             done.add(memory.duid)
 
 def _make_gatherer(method, cls, prefix_cb):
@@ -3688,19 +3630,6 @@ class CSRBusInterface(Record):
     def like(self, other):
         return CSRBusInterface(len(other.dat_w), len(other.adr))
 
-    def write(self, adr, dat):
-        yield self.adr.eq(adr)
-        yield self.dat_w.eq(dat)
-        yield self.we.eq(1)
-        yield
-        yield self.we.eq(0)
-
-    def read(self, adr):
-        yield self.adr.eq(adr)
-        yield
-        yield
-        return (yield self.dat_r)
-
 class CSRBusInterconnect(Module):
     def __init__(self, master, slaves):
         self.comb += master.connect(*slaves)
@@ -3733,7 +3662,7 @@ class CSRBusSRAM(Module):
         word_bits = log2_int(csrw_per_memw)
         page_bits = log2_int((mem.depth*csrw_per_memw + aligned_paging - 1) // aligned_paging, False)
         if page_bits:
-            self._page = CSRStorage(mem.name_override + "_page", page_bits)
+            self._page = CSRStorage(mem.name + "_page", page_bits)
             printf("WARNING: SRAM CSR memory will requires paged access.")
         else:
             self._page = None
@@ -3746,14 +3675,14 @@ class CSRBusSRAM(Module):
         port = mem.get_port(write_capable=not read_only)
         self.specials += mem, port
 
-        sel = Signal()
-        sel_r = Signal()
+        sel = Signal("sel")
+        sel_r = Signal("sel_r")
         self.sync += sel_r.eq(sel)
         self.comb += sel.eq(self.bus.adr[log2_int(aligned_paging):] == address)
 
         if word_bits:
-            word_index    = Signal(word_bits, reset_less=True)
-            word_expanded = Signal(csrw_per_memw*data_width)
+            word_index    = Signal("word_index", word_bits, reset_less=True)
+            word_expanded = Signal("word_expanded", csrw_per_memw * data_width)
             self.sync += word_index.eq(self.bus.adr[:word_bits])
             self.comb += [
                 word_expanded.eq(port.dat_r),
@@ -3762,7 +3691,7 @@ class CSRBusSRAM(Module):
             if not read_only:
                 wregs = []
                 for i in range(csrw_per_memw-1):
-                    wreg = Signal(data_width, reset_less=True)
+                    wreg = Signal("wreg", data_width, reset_less=True)
                     self.sync += If(sel & self.bus.we & (self.bus.adr[:word_bits] == i), wreg.eq(self.bus.dat_w))
                     wregs.append(wreg)
                 memword_chunks = [self.bus.dat_w] + list(reversed(wregs))
@@ -3810,7 +3739,7 @@ class CSRBank(Module):
                 self.submodules += c
         self.decode_bits = bits_for(len(self.simple_csrs)-1)
 
-        sel = Signal()
+        sel = Signal("sel")
         self.comb += sel.eq(self.bus.adr[log2_int(aligned_paging):] == address)
 
         for i, c in enumerate(self.simple_csrs):
@@ -3891,18 +3820,18 @@ class _EventSource(DUID):
 
     Attributes
     ----------
-    trigger : Signal(), in
+    trigger : Signal("..."), in
         Signal which interfaces with the user design.
 
-    status : Signal(), out
+    status : Signal("..."), out
         Contains the current level of the trigger signal.
         This value ends up in the ``status`` register.
 
-    pending : Signal(), out
+    pending : Signal("..."), out
         A trigger event has occurred and not yet cleared.
         This value ends up in the ``pending`` register.
 
-    clear : Signal(), in
+    clear : Signal("..."), in
         Clear after a trigger event.
         Ignored by some event sources.
 
@@ -3916,10 +3845,10 @@ class _EventSource(DUID):
 
     def __init__(self, name=None, description=None):
         DUID.__init__(self)
-        self.status = Signal()
-        self.pending = Signal()
-        self.trigger = Signal()
-        self.clear = Signal()
+        self.status = Signal("status")
+        self.pending = Signal("pending")
+        self.trigger = Signal("trigger")
+        self.clear = Signal("clear")
         self.name = name or "evs"
         self.description = description
 
@@ -3951,7 +3880,7 @@ class EventSourceProcess(Module, _EventSource):
     def __init__(self, name=None, description=None):
         _EventSource.__init__(self, name, description)
         self.comb += self.status.eq(self.trigger)
-        old_trigger = Signal()
+        old_trigger = Signal("old_trigger")
         self.sync += [
             If(self.clear, self.pending.eq(0)),
             old_trigger.eq(self.trigger),
@@ -3965,7 +3894,7 @@ class EventManager(Module, AutoCSR):
 
     Attributes
     ----------
-    irq : Signal(), out
+    irq : Signal("..."), out
         A signal which is driven high whenever there is a pending and unmasked
         event.
         It is typically connected to an interrupt line of a CPU.
@@ -3985,7 +3914,7 @@ class EventManager(Module, AutoCSR):
     """
 
     def __init__(self):
-        self.irq = Signal()
+        self.irq = Signal("irq")
 
     def do_finalize(self):
         sources_u = [v for k, v in xdir(self, True) if isinstance(v, _EventSource)]
@@ -4016,7 +3945,7 @@ class SharedIRQ(Module):
     """Allow an IRQ signal to be shared between multiple EventManager objects."""
 
     def __init__(self, *event_managers):
-        self.irq = Signal()
+        self.irq = Signal("irq")
         self.comb += self.irq.eq(reduce(operator.or_, [ev.irq for ev in event_managers]))
 
 class GPIOIn(Module, AutoCSR):
@@ -4068,30 +3997,6 @@ class WishboneInterface(Record):
     def like(other):
         return WishboneInterface(len(other.dat_w))
 
-    def _do_transaction(self):
-        yield self.cyc.eq(1)
-        yield self.stb.eq(1)
-        yield
-        while not (yield self.ack):
-            yield
-        yield self.cyc.eq(0)
-        yield self.stb.eq(0)
-
-    def write(self, adr, dat, sel=None):
-        if sel is None:
-            sel = 2**len(self.sel) - 1
-        yield self.adr.eq(adr)
-        yield self.dat_w.eq(dat)
-        yield self.sel.eq(sel)
-        yield self.we.eq(1)
-        yield from self._do_transaction()
-
-    def read(self, adr):
-        yield self.adr.eq(adr)
-        yield self.we.eq(0)
-        yield from self._do_transaction()
-        return (yield self.dat_r)
-
     def get_ios(self, bus_name="wb"):
         subsignals = []
         for name, width, direction in self.layout:
@@ -4119,7 +4024,7 @@ class WishboneInterface(Record):
 
 class WishboneTimeout(Module):
     def __init__(self, master, cycles):
-        self.error = Signal()
+        self.error = Signal("error")
 
         timer = WaitTimer(int(cycles))
         self.submodules += timer
@@ -4171,8 +4076,8 @@ class WishboneDecoder(Module):
 
     def __init__(self, master, slaves, register=False):
         ns = len(slaves)
-        slave_sel = Signal(ns)
-        slave_sel_r = Signal(ns)
+        slave_sel = Signal("slave_sel", ns)
+        slave_sel_r = Signal("slave_sel_r", ns)
 
         # decode slave addresses
         self.comb += [slave_sel[i].eq(fun(master.adr))
@@ -4240,8 +4145,8 @@ class WishboneDownConverter(Module):
         dw_to   = len(slave.dat_w)
         ratio   = dw_from // dw_to
 
-        skip    = Signal()
-        counter = Signal(max=ratio)
+        skip    = Signal("skip")
+        counter = Signal("counter", max=ratio)
 
         # Control Path
         fsm = FSM(reset_state="IDLE")
@@ -4276,7 +4181,7 @@ class WishboneDownConverter(Module):
         self.comb += Case(counter, {i: slave.dat_w.eq(master.dat_w[i*dw_to:]) for i in range(ratio)})
 
         # Read Datapath
-        dat_r = Signal(dw_from, reset_less=True)
+        dat_r = Signal("dat_r", dw_from, reset_less=True)
         self.comb += master.dat_r.eq(Cat(dat_r[dw_to:], slave.dat_r))
         self.sync += If(slave.ack | skip, dat_r.eq(master.dat_r))
 
@@ -4391,18 +4296,18 @@ class WishboneCache(Module):
         tagbits = addressbits - linebits
         wordbits = log2_int(max(dw_from // dw_to, 1))
         adr_offset, adr_line, adr_tag = split(master.adr, offsetbits, linebits, tagbits)
-        word = Signal(wordbits) if wordbits else None
+        word = Signal("word", wordbits) if wordbits else None
 
         # Data memory
         data_mem = Memory("data_mem", dw_to * 2**wordbits, 2**linebits)
         data_port = data_mem.get_port(write_capable=True, we_granularity=8)
         self.specials += data_mem, data_port
 
-        write_from_slave = Signal()
+        write_from_slave = Signal("write_from_slave")
         if adr_offset is None:
             adr_offset_r = None
         else:
-            adr_offset_r = Signal(offsetbits, reset_less=True)
+            adr_offset_r = Signal("adr_offset_r", offsetbits, reset_less=True)
             self.sync += adr_offset_r.eq(adr_offset)
 
         self.comb += [
@@ -4443,8 +4348,8 @@ class WishboneCache(Module):
             self.comb += slave.adr.eq(Cat(adr_line, tag_do.tag))
 
         # slave word computation, word_clr and word_inc will be simplified at synthesis when wordbits=0
-        word_clr = Signal()
-        word_inc = Signal()
+        word_clr = Signal("word_clr")
+        word_inc = Signal("word_inc")
         if word is not None:
             self.sync += \
                 If(word_clr,
@@ -4517,24 +4422,15 @@ class WishboneCache(Module):
         )
 
 _reserved_keywords = {
-    "always", "and", "assign", "automatic", "begin", "buf", "bufif0", "bufif1",
-    "case", "casex", "casez", "cell", "cmos", "config", "deassign", "default",
-    "defparam", "design", "disable", "edge", "else", "end", "endcase",
-    "endconfig", "endfunction", "endgenerate", "endmodule", "endprimitive",
-    "endspecify", "endtable", "endtask", "event", "for", "force", "forever",
-    "fork", "function", "generate", "genvar", "highz0", "highz1", "if",
-    "ifnone", "incdir", "include", "initial", "inout", "input",
-    "instance", "integer", "join", "large", "liblist", "library", "localparam",
-    "macromodule", "medium", "module", "nand", "negedge", "nmos", "nor",
-    "noshowcancelled", "not", "notif0", "notif1", "or", "output", "parameter",
-    "pmos", "posedge", "primitive", "pull0", "pull1" "pulldown",
-    "pullup", "pulsestyle_onevent", "pulsestyle_ondetect", "remos", "real",
-    "realtime", "reg", "release", "repeat", "rnmos", "rpmos", "rtran",
-    "rtranif0", "rtranif1", "scalared", "showcancelled", "signed", "small",
-    "specify", "specparam", "strong0", "strong1", "supply0", "supply1",
-    "table", "task", "time", "tran", "tranif0", "tranif1", "tri", "tri0",
-    "tri1", "triand", "trior", "trireg", "unsigned", "use", "vectored", "wait",
-    "wand", "weak0", "weak1", "while", "wire", "wor","xnor", "xor", "do"
+    "always", "and", "assign", "automatic", "begin", "buf", "bufif0", "bufif1", "case", "casex", "casez", "cell", "cmos", "config", "deassign", "default",
+    "defparam", "design", "disable", "edge", "else", "end", "endcase", "endconfig", "endfunction", "endgenerate", "endmodule", "endprimitive",
+    "endspecify", "endtable", "endtask", "event", "for", "force", "forever", "fork", "function", "generate", "genvar", "highz0", "highz1", "if",
+    "ifnone", "incdir", "include", "initial", "inout", "input", "instance", "integer", "join", "large", "liblist", "library", "localparam",
+    "macromodule", "medium", "module", "nand", "negedge", "nmos", "nor", "noshowcancelled", "not", "notif0", "notif1", "or", "output", "parameter",
+    "pmos", "posedge", "primitive", "pull0", "pull1" "pulldown", "pullup", "pulsestyle_onevent", "pulsestyle_ondetect", "remos", "real",
+    "realtime", "reg", "release", "repeat", "rnmos", "rpmos", "rtran", "rtranif0", "rtranif1", "scalared", "showcancelled", "signed", "small",
+    "specify", "specparam", "strong0", "strong1", "supply0", "supply1", "table", "task", "time", "tran", "tranif0", "tranif1", "tri", "tri0",
+    "tri1", "triand", "trior", "trireg", "unsigned", "use", "vectored", "wait", "wand", "weak0", "weak1", "while", "wire", "wor","xnor", "xor", "do"
 }
 
 def _printsig(ns, s):
@@ -4992,8 +4888,8 @@ class Namespace:
             if sig is None:
                 raise ValueError("Attempted to obtain name of non-existent reset signal of domain " + sig.cd)
 
-        if sig.name_override is not None:
-            sig_name = sig.name_override
+        if sig.name is not None:
+            sig_name = sig.name
         else:
             sig_name = self.pnd[sig]
         try:
@@ -5013,8 +4909,8 @@ class Namespace:
 def build_namespace(signals):
     pnd = _build_pnd(signals)
     ns = Namespace(pnd)
-    # register signals with name_override
-    swno = {signal for signal in signals if signal.name_override is not None}
+    # register signals with name
+    swno = {signal for signal in signals if signal.name is not None}
     for signal in sorted(swno, key=lambda x: x.duid):
         ns.get_name(signal)
     return ns
@@ -5099,16 +4995,16 @@ class PHYPadsCombiner:
 
 class BitSlip(Module):
     def __init__(self, dw, rst=None, slp=None, cycles=1):
-        self.i = Signal(dw)
-        self.o = Signal(dw)
-        self.rst = Signal() if rst is None else rst
-        self.slp = Signal() if slp is None else slp
+        self.i = Signal("i", dw)
+        self.o = Signal("o", dw)
+        self.rst = Signal("rst") if rst is None else rst
+        self.slp = Signal("slp") if slp is None else slp
 
-        value = Signal(max=cycles*dw)
+        value = Signal("value", max=cycles*dw)
         self.sync += If(self.slp, value.eq(value + 1))
         self.sync += If(self.rst, value.eq(0))
 
-        r = Signal((cycles+1)*dw, reset_less=True)
+        r = Signal("r", (cycles+1)*dw, reset_less=True)
         self.sync += r.eq(Cat(r[dw:], self.i))
         cases = {}
         for i in range(cycles*dw):
@@ -5206,13 +5102,13 @@ class LiteDRAMNativePort(Settings):
     def __init__(self, mode, address_width, data_width, clock_domain="sys", id=0):
         self.set_attributes(locals())
 
-        self.lock = Signal()
+        self.lock = Signal("lock")
 
         self.cmd   = Endpoint(cmd_description(address_width))
         self.wdata = Endpoint(wdata_description(data_width))
         self.rdata = Endpoint(rdata_description(data_width))
 
-        self.flush = Signal()
+        self.flush = Signal("flush")
 
         # retro-compatibility # FIXME: remove
         self.aw = self.address_width
@@ -5235,12 +5131,12 @@ class LiteDRAMNativePort(Settings):
 
 class tXXDController(Module):
     def __init__(self, txxd):
-        self.valid = valid = Signal()
-        self.ready = ready = Signal(reset=txxd is None)
+        self.valid = valid = Signal("valid")
+        self.ready = ready = Signal("ready", reset=txxd is None)
         ready.attr.add("no_retiming")
 
         if txxd is not None:
-            count = Signal(max=max(txxd, 2))
+            count = Signal("count", max=max(txxd, 2))
             self.sync += \
                 If(valid,
                     count.eq(txxd - 1),
@@ -5258,13 +5154,13 @@ class tXXDController(Module):
 
 class tFAWController(Module):
     def __init__(self, tfaw):
-        self.valid = valid = Signal()
-        self.ready = ready = Signal(reset=1)
+        self.valid = valid = Signal("valid")
+        self.ready = ready = Signal("ready", reset=1)
         ready.attr.add("no_retiming")
 
         if tfaw is not None:
-            count  = Signal(max=max(tfaw, 2))
-            window = Signal(tfaw)
+            count  = Signal("count", max=max(tfaw, 2))
+            window = Signal("window", tfaw)
             self.sync += window.eq(Cat(valid, window))
             self.comb += count.eq(reduce(operator.add, [window[i] for i in range(tfaw)]))
             self.sync += \
@@ -5344,21 +5240,21 @@ class DFIInterface(Record):
 
 class ECP5DDRPHYInit(Module):
     def __init__(self):
-        self.pause = Signal()
-        self.stop  = Signal()
-        self.delay = Signal()
-        self.reset = Signal()
+        self.pause = Signal("pause")
+        self.stop  = Signal("stop")
+        self.delay = Signal("delay")
+        self.reset = Signal("reset")
 
-        new_lock = Signal()
-        update   = Signal()
-        stop     = Signal()
-        freeze   = Signal()
-        pause    = Signal()
-        reset    = Signal()
+        new_lock = Signal("new_lock")
+        update   = Signal("update")
+        stop     = Signal("stop")
+        freeze   = Signal("freeze")
+        pause    = Signal("pause")
+        reset    = Signal("reset")
 
         # DDRDLLA instance
-        _lock = Signal()
-        delay = Signal()
+        _lock = Signal("_lock")
+        delay = Signal("delay")
         self.specials += Instance("DDRDLLA",
             i_RST      = ResetSignal("init"),
             i_CLK      = ClockSignal("sys2x"),
@@ -5367,8 +5263,8 @@ class ECP5DDRPHYInit(Module):
             o_DDRDEL   = delay,
             o_LOCK     = _lock
         )
-        lock   = Signal()
-        lock_d = Signal()
+        lock   = Signal("lock")
+        lock_d = Signal("lock_d")
         self.specials += MultiReg(_lock, lock, "init")
         self.sync.init += lock_d.eq(lock)
         self.comb += new_lock.eq(lock & ~lock_d)
@@ -5430,7 +5326,7 @@ class ECP5DDRPHY(Module, AutoCSR):
         self._burstdet_seen = CSRStatus("burstdet_seen", databits // 8)
 
         # Observation
-        self.datavalid = Signal(databits // 8)
+        self.datavalid = Signal("datavalid", databits // 8)
 
         # PHY settings
         rdcmdphase, rdphase = get_sys_phases(nphases, cl_sys_latency, cl)
@@ -5455,7 +5351,7 @@ class ECP5DDRPHY(Module, AutoCSR):
         # DFI Interface
         self.dfi = dfi = DFIInterface(addressbits, bankbits, nranks, 4 * databits, 4)
 
-        bl8_chunk = Signal()
+        bl8_chunk = Signal("bl8_chunk")
 
         # Iterate on pads groups
         for pads_group in range(len(pads.groups)):
@@ -5463,7 +5359,7 @@ class ECP5DDRPHY(Module, AutoCSR):
 
             # Clock
             for i in range(len(pads.clk_p)):
-                sd_clk_se = Signal()
+                sd_clk_se = Signal("sd_clk_se")
                 self.specials += Instance("ODDRX2F",
                     i_RST  = ResetSignal("sys"),
                     i_SCLK = ClockSignal("sys"),
@@ -5517,21 +5413,21 @@ class ECP5DDRPHY(Module, AutoCSR):
                     )
 
         # DQ
-        dq_oe         = Signal()
-        dqs_re        = Signal()
-        dqs_oe        = Signal()
-        dqs_postamble = Signal()
-        dqs_preamble  = Signal()
+        dq_oe         = Signal("dq_oe")
+        dqs_re        = Signal("dqs_re")
+        dqs_oe        = Signal("dqs_oe")
+        dqs_postamble = Signal("dqs_postamble")
+        dqs_preamble  = Signal("dqs_preamble")
         for i in range(databits // 8):
             # DQSBUFM
-            dqs_i   = Signal()
-            dqsr90  = Signal()
-            dqsw270 = Signal()
-            dqsw    = Signal()
-            rdpntr  = Signal(3)
-            wrpntr  = Signal(3)
-            rdly    = Signal(7)
-            burstdet  = Signal()
+            dqs_i   = Signal("dqs_i")
+            dqsr90  = Signal("dqsr90")
+            dqsw270 = Signal("dqsw270")
+            dqsw    = Signal("dqsw")
+            rdpntr  = Signal("rdpntr", 3)
+            wrpntr  = Signal("wrpntr", 3)
+            rdly    = Signal("rdly", 7)
+            burstdet  = Signal("burstdet")
             self.sync += [
                 If(self._dly_sel.storage[i] & self._rdly_dq_rst.re, rdly.eq(0)),
                 If(self._dly_sel.storage[i] & self._rdly_dq_inc.re, rdly.eq(rdly + 1))
@@ -5578,7 +5474,7 @@ class ECP5DDRPHY(Module, AutoCSR):
                 o_DQSW270        = dqsw270,
                 o_DQSW           = dqsw
             )
-            burstdet_d = Signal()
+            burstdet_d = Signal("burstdet_d")
             self.sync += [
                 burstdet_d.eq(burstdet),
                 If(self._burstdet_clr.re,  self._burstdet_seen.status[i].eq(0)),
@@ -5586,9 +5482,9 @@ class ECP5DDRPHY(Module, AutoCSR):
             ]
 
             # DQS and DM
-            dm_o_data       = Signal(8)
-            dm_o_data_d     = Signal(8)
-            dm_o_data_muxed = Signal(4)
+            dm_o_data       = Signal("dm_o_data", 8)
+            dm_o_data_d     = Signal("dm_o_data_d", 8)
+            dm_o_data_muxed = Signal("dm_o_data_muxed", 4)
             self.comb += dm_o_data.eq(Cat(
                 dfi.phases[0].wrdata_mask[0 * databits // 8 + i],
                 dfi.phases[0].wrdata_mask[1 * databits // 8 + i],
@@ -5617,8 +5513,8 @@ class ECP5DDRPHY(Module, AutoCSR):
                 o_Q       = pads.dm[i]
             )
 
-            dqs      = Signal()
-            dqs_oe_n = Signal()
+            dqs      = Signal("dqs")
+            dqs_oe_n = Signal("dqs_oe_n")
             self.specials += [
                 Instance("ODDRX2DQSB",
                     i_RST  = ResetSignal("sys"),
@@ -5644,14 +5540,14 @@ class ECP5DDRPHY(Module, AutoCSR):
             ]
 
             for j in range(8*i, 8*(i+1)):
-                dq_o            = Signal()
-                dq_i            = Signal()
-                dq_oe_n         = Signal()
-                dq_i_delayed    = Signal()
-                dq_i_data       = Signal(4)
-                dq_o_data       = Signal(8)
-                dq_o_data_d     = Signal(8)
-                dq_o_data_muxed = Signal(4)
+                dq_o            = Signal("dq_o")
+                dq_i            = Signal("dq_i")
+                dq_oe_n         = Signal("dq_oe_n")
+                dq_i_delayed    = Signal("dq_i_delayed")
+                dq_i_data       = Signal("dq_i_data", 4)
+                dq_o_data       = Signal("dq_o_data", 8)
+                dq_o_data_d     = Signal("dq_o_data_d", 8)
+                dq_o_data_muxed = Signal("dq_o_data_muxed", 4)
                 self.comb += dq_o_data.eq(Cat(
                     dfi.phases[0].wrdata[0*databits+j],
                     dfi.phases[0].wrdata[1*databits+j],
@@ -5712,7 +5608,7 @@ class ECP5DDRPHY(Module, AutoCSR):
                     slp    = self._dly_sel.storage[i] & self._rdly_dq_bitslip.re,
                     cycles = 1)
                 self.submodules += dq_i_bitslip
-                dq_i_bitslip_o_d = Signal(4)
+                dq_i_bitslip_o_d = Signal("dq_i_bitslip_o_d", 4)
                 self.comb += dq_i_bitslip.i.eq(dq_i_data)
                 self.sync += dq_i_bitslip_o_d.eq(dq_i_bitslip.o)
                 self.comb += [
@@ -5750,7 +5646,7 @@ class ECP5DDRPHY(Module, AutoCSR):
         # The read data valid is asserted for 1 sys_clk cycle when the data is available on the DFI
         # interface, the latency is the sum of the ODDRX2DQA, CAS, IDDRX2DQA latencies.
 
-        rddata_en = Signal(self.settings.read_latency)
+        rddata_en = Signal("rddata_en", self.settings.read_latency)
         rddata_en_last = Signal.like(rddata_en)
         self.comb += rddata_en.eq(Cat(dfi.phases[self.settings.rdphase].rddata_en, rddata_en_last))
         self.sync += rddata_en_last.eq(rddata_en)
@@ -5765,7 +5661,7 @@ class ECP5DDRPHY(Module, AutoCSR):
         # 2x for DDR, 2x for halfrate) but DDR3 requires a burst of 8 datas (BL8) for best efficiency.
         # Writes are then performed in 2 sys_clk cycles and data needs to be selected for each cycle.
 
-        wrdata_en = Signal(cwl_sys_latency + 4)
+        wrdata_en = Signal("wrdata_en", cwl_sys_latency + 4)
         wrdata_en_last = Signal.like(wrdata_en)
         self.comb += wrdata_en.eq(Cat(dfi.phases[self.settings.wrphase].wrdata_en, wrdata_en_last))
         self.sync += wrdata_en_last.eq(wrdata_en)
@@ -5851,8 +5747,8 @@ class RefreshExecuter(Module):
     - Wait tRFC
     """
     def __init__(self, cmd, trp, trfc):
-        self.start = Signal()
-        self.done  = Signal()
+        self.start = Signal("start")
+        self.done  = Signal("done")
 
         self.sync += [
             cmd.a.eq(  0),
@@ -5897,13 +5793,13 @@ class RefreshSequencer(Module):
     Sequence N refreshs to the DRAM.
     """
     def __init__(self, cmd, trp, trfc, postponing=1):
-        self.start = Signal()
-        self.done  = Signal()
+        self.start = Signal("start")
+        self.done  = Signal("done")
 
         executer = RefreshExecuter(cmd, trp, trfc)
         self.submodules += executer
 
-        count = Signal(bits_for(postponing), reset=postponing-1)
+        count = Signal("count", bits_for(postponing), reset=postponing-1)
         self.sync += [
             If(self.start,
                 count.eq(count.reset)
@@ -5922,12 +5818,12 @@ class RefreshTimer(Module):
     Generate periodic pulses (tREFI period) to trigger DRAM refresh.
     """
     def __init__(self, trefi):
-        self.wait  = Signal()
-        self.done  = Signal()
-        self.count = Signal(bits_for(trefi))
+        self.wait  = Signal("wait")
+        self.done  = Signal("done")
+        self.count = Signal("count", bits_for(trefi))
 
-        done  = Signal()
-        count = Signal(bits_for(trefi), reset=trefi-1)
+        done  = Signal("done")
+        count = Signal("count", bits_for(trefi), reset=trefi-1)
 
         self.sync += [
             If(self.wait & ~self.done,
@@ -5948,10 +5844,10 @@ class RefreshPostponer(Module):
     Postpone N Refresh requests and generate a request when N is reached.
     """
     def __init__(self, postponing=1):
-        self.req_i = Signal()
-        self.req_o = Signal()
+        self.req_i = Signal("req_i")
+        self.req_o = Signal("req_o")
 
-        count = Signal(bits_for(postponing), reset=postponing-1)
+        count = Signal("count", bits_for(postponing), reset=postponing-1)
         self.sync += [
             self.req_o.eq(0),
             If(self.req_i,
@@ -5973,8 +5869,8 @@ class ZQCSExecuter(Module):
     - Wait tZQCS
     """
     def __init__(self, cmd, trp, tzqcs):
-        self.start = Signal()
-        self.done  = Signal()
+        self.start = Signal("start")
+        self.done  = Signal("done")
 
         self.sync += [
             # Note: Don't set cmd to 0 since already done in RefreshExecuter
@@ -6029,8 +5925,8 @@ class Refresher(Module):
         babits = settings.geom.bankbits + log2_int(settings.phy.nranks)
         self.cmd = cmd = Endpoint(cmd_request_rw_layout(a=abits, ba=babits))
 
-        wants_refresh = Signal()
-        wants_zqcs    = Signal()
+        wants_refresh = Signal("wants_refresh")
+        wants_zqcs    = Signal("wants_zqcs")
 
         # Refresh Timer
         timer = RefreshTimer(settings.timing.tREFI)
@@ -6165,23 +6061,23 @@ class BankMachine(Module):
     ----------
     req : Record(cmd_layout)
         Stream of requests from LiteDRAMCrossbar
-    refresh_req : Signal(), in
+    refresh_req : Signal("..."), in
         Indicates that refresh needs to be done, connects to Refresher.cmd.valid
-    refresh_gnt : Signal(), out
+    refresh_gnt : Signal("..."), out
         Indicates that refresh permission has been granted, satisfying timings
     cmd : Endpoint(cmd_request_rw_layout)
         Stream of commands to the Multiplexer
     """
     def __init__(self, n, address_width, address_align, nranks, settings):
         self.req = req = Record(cmd_layout(address_width))
-        self.refresh_req = refresh_req = Signal()
-        self.refresh_gnt = refresh_gnt = Signal()
+        self.refresh_req = refresh_req = Signal("refresh_req")
+        self.refresh_gnt = refresh_gnt = Signal("refresh_gnt")
 
         a  = settings.geom.addressbits
         ba = settings.geom.bankbits + log2_int(nranks)
         self.cmd = cmd = Endpoint(cmd_request_rw_layout(a, ba))
 
-        auto_precharge = Signal()
+        auto_precharge = Signal("auto_precharge")
 
         # Command buffer
         cmd_buffer_layout    = [("we", 1), ("addr", len(req.addr))]
@@ -6198,11 +6094,11 @@ class BankMachine(Module):
         slicer = _AddressSlicer(settings.geom.colbits, address_align)
 
         # Row tracking
-        row        = Signal(settings.geom.rowbits)
-        row_opened = Signal()
-        row_hit    = Signal()
-        row_open   = Signal()
-        row_close  = Signal()
+        row        = Signal("row", settings.geom.rowbits)
+        row_opened = Signal("row_opened")
+        row_hit    = Signal("row_hit")
+        row_open   = Signal("row_open")
+        row_close  = Signal("row_close")
         self.comb += row_hit.eq(row == slicer.row(cmd_buffer.source.addr))
         self.sync += \
             If(row_close,
@@ -6213,7 +6109,7 @@ class BankMachine(Module):
             )
 
         # Address generation
-        row_col_n_addr_sel = Signal()
+        row_col_n_addr_sel = Signal("row_col_n_addr_sel")
         self.comb += [
             cmd.ba.eq(n),
             If(row_col_n_addr_sel,
@@ -6356,10 +6252,10 @@ class Bandwidth(Module, AutoCSR):
         self.nwrites    = CSRStatus("nwrites", period_bits + 1)
         self.data_width = CSRStatus("data_width", bits_for(data_width), reset=data_width)
 
-        cmd_valid    = Signal()
-        cmd_ready    = Signal()
-        cmd_is_read  = Signal()
-        cmd_is_write = Signal()
+        cmd_valid    = Signal("cmd_valid")
+        cmd_ready    = Signal("cmd_ready")
+        cmd_is_read  = Signal("cmd_is_read")
+        cmd_is_write = Signal("cmd_is_write")
         self.sync += [
             cmd_valid.eq(cmd.valid),
             cmd_ready.eq(cmd.ready),
@@ -6367,12 +6263,12 @@ class Bandwidth(Module, AutoCSR):
             cmd_is_write.eq(cmd.is_write)
         ]
 
-        counter   = Signal(period_bits)
-        period    = Signal()
-        nreads    = Signal(period_bits + 1)
-        nwrites   = Signal(period_bits + 1)
-        nreads_r  = Signal(period_bits + 1)
-        nwrites_r = Signal(period_bits + 1)
+        counter   = Signal("counter", period_bits)
+        period    = Signal("period")
+        nreads    = Signal("nreads", period_bits + 1)
+        nwrites   = Signal("nwrites", period_bits + 1)
+        nreads_r  = Signal("nreads_r", period_bits + 1)
+        nwrites_r = Signal("nwrites_r", period_bits + 1)
         self.sync += [
             Cat(counter, period).eq(counter + 1),
             If(period,
@@ -6420,10 +6316,10 @@ class _CommandChooser(Module):
         Currently selected request stream (when ~cmd.valid, cas/ras/we are 0)
     """
     def __init__(self, requests):
-        self.want_reads     = Signal()
-        self.want_writes    = Signal()
-        self.want_cmds      = Signal()
-        self.want_activates = Signal()
+        self.want_reads     = Signal("want_reads")
+        self.want_writes    = Signal("want_writes")
+        self.want_cmds      = Signal("want_cmds")
+        self.want_activates = Signal("want_activates")
 
         a  = len(requests[0].a)
         ba = len(requests[0].ba)
@@ -6433,7 +6329,7 @@ class _CommandChooser(Module):
 
         n = len(requests)
 
-        valids = Signal(n)
+        valids = Signal("valids", n)
         for i, request in enumerate(requests):
             is_act_cmd = request.ras & ~request.cas & ~request.we
             command = request.is_cmd & self.want_cmds & (~is_act_cmd | self.want_activates)
@@ -6504,7 +6400,7 @@ class _Steerer(Module):
 
     Attributes
     ----------
-    sel : [Signal(max=len(commands)), ...], in
+    sel : [Signal("...", max=len(commands)), ...], in
         Signals for selecting which request gets connected to the corresponding
         DFI phase. The signals should take one of the values from STEER_* to
         select given source.
@@ -6512,7 +6408,7 @@ class _Steerer(Module):
     def __init__(self, commands, dfi):
         ncmd = len(commands)
         nph  = len(dfi.phases)
-        self.sel = [Signal(max=ncmd) for i in range(nph)]
+        self.sel = [Signal("sel", max=ncmd) for i in range(nph)]
 
         def valid_and(cmd, attr):
             if not hasattr(cmd, "valid"):
@@ -6525,10 +6421,10 @@ class _Steerer(Module):
             rankbits = log2_int(nranks)
             if hasattr(phase, "reset_n"):
                 self.comb += phase.reset_n.eq(1)
-            self.comb += phase.cke.eq(Replicate(Signal(reset=1), nranks))
+            self.comb += phase.cke.eq(Replicate(Signal(None, reset=1), nranks))
             if hasattr(phase, "odt"):
                 # FIXME: add dynamic drive for multi-rank (will be needed for high frequencies)
-                self.comb += phase.odt.eq(Replicate(Signal(reset=1), nranks))
+                self.comb += phase.odt.eq(Replicate(Signal(None, reset=1), nranks))
             if rankbits:
                 rank_decoder = OneHotDecoder(nranks)
                 self.submodules += rank_decoder
@@ -6580,8 +6476,8 @@ class Multiplexer(Module, AutoCSR):
     def __init__(self, settings, bank_machines, refresher, dfi, interface):
         assert(settings.phy.nphases == len(dfi.phases))
 
-        ras_allowed = Signal(reset=1)
-        cas_allowed = Signal(reset=1)
+        ras_allowed = Signal("ras_allowed", reset=1)
+        cas_allowed = Signal("cas_allowed", reset=1)
 
         # Command choosing
         requests = [bm.cmd for bm in bank_machines]
@@ -6627,8 +6523,8 @@ class Multiplexer(Module, AutoCSR):
         self.comb += twtrcon.valid.eq(choose_req.accept() & choose_req.write())
 
         # Read/write turnaround
-        read_available = Signal()
-        write_available = Signal()
+        read_available = Signal("read_available")
+        write_available = Signal("write_available")
         reads = [req.valid & req.is_read for req in requests]
         writes = [req.valid & req.is_write for req in requests]
         self.comb += [
@@ -6637,11 +6533,11 @@ class Multiplexer(Module, AutoCSR):
         ]
 
         def anti_starvation(timeout):
-            en = Signal()
-            max_time = Signal()
+            en = Signal("en")
+            max_time = Signal("max_time")
             if timeout:
                 t = timeout - 1
-                time = Signal(max=t+1)
+                time = Signal("time", max=t+1)
                 self.comb += max_time.eq(time == 0)
                 self.sync += If(~en,
                         time.eq(t)
@@ -6657,7 +6553,7 @@ class Multiplexer(Module, AutoCSR):
 
         # Refresh
         self.comb += [bm.refresh_req.eq(refresher.cmd.valid) for bm in bank_machines]
-        go_to_refresh = Signal()
+        go_to_refresh = Signal("go_to_refresh")
         bm_refresh_gnts = [bm.refresh_gnt for bm in bank_machines]
         self.comb += go_to_refresh.eq(reduce(operator.and_, bm_refresh_gnts))
 
@@ -6954,7 +6850,7 @@ class LiteDRAMCrossbar(Module):
             # For each master, determine if another bank locks it
             master_locked = []
             for nm, master in enumerate(self.masters):
-                locked = Signal()
+                locked = Signal("locked")
                 for other_nb, other_arbiter in enumerate(arbiters):
                     if other_nb != nb:
                         other_bank = getattr(controller, "bank"+str(other_nb))
@@ -6985,14 +6881,14 @@ class LiteDRAMCrossbar(Module):
         # Delay write/read signals based on their latency
         for nm, master_wdata_ready in enumerate(master_wdata_readys):
             for i in range(self.write_latency):
-                new_master_wdata_ready = Signal()
+                new_master_wdata_ready = Signal("new_master_wdata_ready")
                 self.sync += new_master_wdata_ready.eq(master_wdata_ready)
                 master_wdata_ready = new_master_wdata_ready
             master_wdata_readys[nm] = master_wdata_ready
 
         for nm, master_rdata_valid in enumerate(master_rdata_valids):
             for i in range(self.read_latency):
-                new_master_rdata_valid = Signal()
+                new_master_rdata_valid = Signal("new_master_rdata_valid")
                 self.sync += new_master_rdata_valid.eq(master_rdata_valid)
                 master_rdata_valid = new_master_rdata_valid
             master_rdata_valids[nm] = master_rdata_valid
@@ -7363,9 +7259,9 @@ class LiteDRAMNativePortDownConverter(Module):
         ratio = port_from.data_width // port_to.data_width
         mode  = port_from.mode
 
-        counter       = Signal(max=ratio)
-        counter_reset = Signal()
-        counter_ce    = Signal()
+        counter       = Signal("counter", max=ratio)
+        counter_reset = Signal("counter_reset")
+        counter_ce    = Signal("counter_ce")
         self.sync += \
             If(counter_reset,
                 counter.eq(0)
@@ -7423,12 +7319,12 @@ class LiteDRAMNativeWritePortUpConverter(Module):
 
         ratio = port_to.data_width // port_from.data_width
 
-        we      = Signal()
-        address = Signal(port_to.address_width)
+        we      = Signal("we")
+        address = Signal("address", port_to.address_width)
 
-        counter       = Signal(max=ratio)
-        counter_reset = Signal()
-        counter_ce    = Signal()
+        counter       = Signal("counter", max=ratio)
+        counter_reset = Signal("counter_reset")
+        counter_ce    = Signal("counter_ce")
         self.sync += \
             If(counter_reset,
                 counter.eq(0)
@@ -7491,8 +7387,8 @@ class LiteDRAMNativeReadPortUpConverter(Module):
         cmd_buffer = SyncFIFO([("sel", ratio)], 4)
         self.submodules += cmd_buffer
 
-        counter = Signal(max=ratio)
-        counter_ce = Signal()
+        counter = Signal("counter", max=ratio)
+        counter_ce = Signal("counter_ce")
         self.sync += \
             If(counter_ce,
                 counter.eq(counter + 1)
@@ -7523,8 +7419,8 @@ class LiteDRAMNativeReadPortUpConverter(Module):
         rdata_converter = StrideConverter(port_to.rdata.description, port_from.rdata.description, reverse=reverse)
         self.submodules += rdata_buffer, rdata_converter
 
-        rdata_chunk       = Signal(ratio, reset=1)
-        rdata_chunk_valid = Signal()
+        rdata_chunk       = Signal("rdata_chunk", ratio, reset=1)
+        rdata_chunk_valid = Signal("rdata_chunk_valid")
         self.sync += \
             If(rdata_converter.source.valid &
                rdata_converter.source.ready,
@@ -7606,7 +7502,7 @@ class LiteDRAMWishbone2Native(Module):
 
         # Control
         ratio = wishbone_data_width // port_data_width
-        count = Signal(max=max(ratio, 2))
+        count = Signal("count", max=max(ratio, 2))
         self.submodules.fsm = fsm = FSM(reset_state="CMD")
         fsm.act("CMD",
             port.cmd.valid.eq(wishbone.cyc & wishbone.stb),
@@ -7887,15 +7783,15 @@ class Raw(Instance.PreformattedParam):
 class IoBuf(Module):
     def __init__(self, usbp_pin, usbn_pin, usb_pullup_pin=None):
         # tx/rx io interface
-        self.usb_tx_en = Signal()
-        self.usb_p_tx = Signal()
-        self.usb_n_tx = Signal()
+        self.usb_tx_en = Signal("usb_tx_en")
+        self.usb_p_tx = Signal("usb_p_tx")
+        self.usb_n_tx = Signal("usb_n_tx")
 
-        self.usb_p_rx = Signal()
-        self.usb_n_rx = Signal()
+        self.usb_p_rx = Signal("usb_p_rx")
+        self.usb_n_rx = Signal("usb_n_rx")
 
-        self.usb_p_rx_io = Signal()
-        self.usb_n_rx_io = Signal()
+        self.usb_p_rx_io = Signal("usb_p_rx_io")
+        self.usb_n_rx_io = Signal("usb_n_rx_io")
 
         usb_p_t = TSTriple()
         usb_n_t = TSTriple()
@@ -7903,15 +7799,15 @@ class IoBuf(Module):
         self.specials += usb_p_t.get_tristate(usbp_pin)
         self.specials += usb_n_t.get_tristate(usbn_pin)
 
-        self.usb_pullup = Signal()
+        self.usb_pullup = Signal("usb_pullup")
         if usb_pullup_pin is not None:
             self.comb += [
                 usb_pullup_pin.eq(self.usb_pullup),
             ]
 
-        usb_tx_en = Signal()
-        usb_p_tx = Signal()
-        usb_n_tx = Signal()
+        usb_tx_en = Signal("usb_tx_en")
+        usb_p_tx = Signal("usb_p_tx")
+        usb_n_tx = Signal("usb_n_tx")
 
         self.sync.usb_48 += [
              usb_tx_en.eq(self.usb_tx_en),
@@ -7934,10 +7830,10 @@ class IoBuf(Module):
         )
 
         # Use IO buffers on input
-        usb_p_rx_ = Signal()
-        usb_n_rx_ = Signal()
-        usb_p_t_i = Signal()
-        usb_n_t_i = Signal()
+        usb_p_rx_ = Signal("usb_p_rx_")
+        usb_n_rx_ = Signal("usb_n_rx_")
+        usb_p_t_i = Signal("usb_p_t_i")
+        usb_n_t_i = Signal("usb_n_t_i")
         self.specials += Instance("IFS1P3BX",
             i_D=usb_p_t.i,
             i_SCLK=ClockSignal("usb_48"),
@@ -7988,23 +7884,23 @@ class RxBitstuffRemover(Module):
 
     Input Ports
     ------------
-    i_valid : Signal(1)
+    i_valid : Signal("...", 1)
         Qualifier for all of the input signals.  Indicates one bit of valid
         data is present on the inputs.
 
-    i_data : Signal(1)
+    i_data : Signal("...", 1)
         Decoded data bit from USB bus.
         Qualified by valid.
 
     Output Ports
     ------------
-    o_data : Signal(1)
+    o_data : Signal("...", 1)
         Decoded data bit from USB bus.
 
-    o_stall : Signal(1)
+    o_stall : Signal("...", 1)
         Indicates the bit stuffer just removed an extra bit, so no data available.
 
-    o_error : Signal(1)
+    o_error : Signal("...", 1)
         Indicates there has been a bitstuff error. A bitstuff error occurs
         when there should be a stuffed '0' after 6 consecutive 1's; but instead
         of a '0', there is an additional '1'.  This is normal during IDLE, but
@@ -8013,15 +7909,15 @@ class RxBitstuffRemover(Module):
     """
 
     def __init__(self):
-        self.i_valid = Signal()
-        self.i_data = Signal()
+        self.i_valid = Signal("i_valid")
+        self.i_data = Signal("i_data")
 
         # This state machine recognizes sequences of 6 bits and drops the 7th bit.
         # The fsm implements a counter in a series of several states.
         # This is intentional to help absolutely minimize the levels of logic used.
         self.submodules.stuff = stuff = FSM(reset_state="D0")
 
-        drop_bit = Signal(1)
+        drop_bit = Signal("drop_bit", 1)
 
         for i in range(6):
             stuff.act("D%d" % i,
@@ -8045,9 +7941,9 @@ class RxBitstuffRemover(Module):
         )
 
         # pass all of the outputs through a pipe stage
-        self.o_data = Signal()
-        self.o_error = Signal()
-        self.o_stall = Signal(reset=1)
+        self.o_data = Signal("o_data")
+        self.o_error = Signal("o_error")
+        self.o_stall = Signal("o_stall", reset=1)
 
         self.sync += [
             self.o_data.eq(self.i_data),
@@ -8070,10 +7966,10 @@ class RxClockDataRecovery(Module):
     -----------
     Input ports are passed in via the constructor.
 
-    usbp_raw : Signal(1)
+    usbp_raw : Signal("...", 1)
         Raw USB+ input from the FPGA IOs, no need to synchronize.
 
-    usbn_raw : Signal(1)
+    usbn_raw : Signal("...", 1)
         Raw USB- input from the FPGA IOs, no need to synchronize.
 
     Output Ports
@@ -8081,22 +7977,22 @@ class RxClockDataRecovery(Module):
     Output ports are data members of the module. All output ports are flopped.
     The line_state_dj/dk/se0/se1 outputs are 1-hot encoded.
 
-    line_state_valid : Signal(1)
+    line_state_valid : Signal("...", 1)
         Asserted for one clock when the output line state is ready to be sampled.
 
-    line_state_dj : Signal(1)
+    line_state_dj : Signal("...", 1)
         Represents Full Speed J-state on the incoming USB data pair.
         Qualify with line_state_valid.
 
-    line_state_dk : Signal(1)
+    line_state_dk : Signal("...", 1)
         Represents Full Speed K-state on the incoming USB data pair.
         Qualify with line_state_valid.
 
-    line_state_se0 : Signal(1)
+    line_state_se0 : Signal("...", 1)
         Represents SE0 on the incoming USB data pair.
         Qualify with line_state_valid.
 
-    line_state_se1 : Signal(1)
+    line_state_se1 : Signal("...", 1)
         Represents SE1 on the incoming USB data pair.
         Qualify with line_state_valid.
     """
@@ -8111,8 +8007,8 @@ class RxClockDataRecovery(Module):
             # care of this for us.  Without MultiReg we would have metastability
             # issues.
             #
-            usbp = Signal(reset=1)
-            usbn = Signal()
+            usbp = Signal("usbp", reset=1)
+            usbn = Signal("usbn")
 
             self.specials += MultiReg(usbp_raw, usbp, n=1, reset=1)
             self.specials += MultiReg(usbn_raw, usbn, n=1)
@@ -8137,15 +8033,15 @@ class RxClockDataRecovery(Module):
         #
         self.submodules.lsr = lsr = FSM()
 
-        dpair = Signal(2)
+        dpair = Signal("dpair", 2)
         self.comb += dpair.eq(Cat(usbn, usbp))
 
         # output signals for use by the clock recovery stage
-        line_state_dt = Signal()
-        line_state_dj = Signal()
-        line_state_dk = Signal()
-        line_state_se0 = Signal()
-        line_state_se1 = Signal()
+        line_state_dt = Signal("line_state_dt")
+        line_state_dj = Signal("line_state_dj")
+        line_state_dk = Signal("line_state_dk")
+        line_state_se0 = Signal("line_state_se0")
+        line_state_se1 = Signal("line_state_se1")
 
         # If we are in a transition state, then we can sample the pair and
         # move to the next corresponding line state.
@@ -8180,13 +8076,13 @@ class RxClockDataRecovery(Module):
         #
 
         # We 4x oversample, so make the line_state_phase have 4 possible values.
-        line_state_phase = Signal(2)
+        line_state_phase = Signal("line_state_phase", 2)
 
-        self.line_state_valid = Signal()
-        self.line_state_dj = Signal()
-        self.line_state_dk = Signal()
-        self.line_state_se0 = Signal()
-        self.line_state_se1 = Signal()
+        self.line_state_valid = Signal("line_state_valid")
+        self.line_state_dj = Signal("line_state_dj")
+        self.line_state_dk = Signal("line_state_dk")
+        self.line_state_se0 = Signal("line_state_se0")
+        self.line_state_se1 = Signal("line_state_se1")
 
         self.sync += [
             self.line_state_valid.eq(line_state_phase == 1),
@@ -8239,40 +8135,40 @@ class RxPacketDetect(Module):
 
     Input Ports
     ------------
-    i_valid : Signal(1)
+    i_valid : Signal("...", 1)
         Qualifier for all of the input signals.  Indicates one bit of valid
         data is present on the inputs.
 
-    i_data : Signal(1)
+    i_data : Signal("...", 1)
         Decoded data bit from USB bus.
         Qualified by valid.
 
-    i_se0 : Signal(1)
+    i_se0 : Signal("...", 1)
         Indicator for SE0 from USB bus.
         Qualified by valid.
 
     Output Ports
     ------------
-    o_pkt_start : Signal(1)
+    o_pkt_start : Signal("...", 1)
         Asserted for one clock on the last bit of the sync.
 
-    o_pkt_active : Signal(1)
+    o_pkt_active : Signal("...", 1)
         Asserted while in the middle of a packet.
 
-    o_pkt_end : Signal(1)
+    o_pkt_end : Signal("...", 1)
         Asserted for one clock after the last data bit of a packet was received.
     """
 
     def __init__(self):
-        self.i_valid = Signal()
-        self.i_data = Signal()
-        self.i_se0 = Signal()
+        self.i_valid = Signal("i_valid")
+        self.i_data = Signal("i_data")
+        self.i_se0 = Signal("i_se0")
 
         self.submodules.pkt = pkt = FSM()
 
-        pkt_start = Signal()
-        pkt_active = Signal()
-        pkt_end = Signal()
+        pkt_start = Signal("pkt_start")
+        pkt_active = Signal("pkt_active")
+        pkt_end = Signal("pkt_end")
 
         for i in range(5):
             pkt.act("D%d" % i,
@@ -8309,9 +8205,9 @@ class RxPacketDetect(Module):
         )
 
         # pass all of the outputs through a pipe stage
-        self.o_pkt_start = Signal()
-        self.o_pkt_active = Signal()
-        self.o_pkt_end = Signal()
+        self.o_pkt_start = Signal("o_pkt_start")
+        self.o_pkt_active = Signal("o_pkt_active")
+        self.o_pkt_end = Signal("o_pkt_end")
         self.comb += [
             self.o_pkt_start.eq(pkt_start),
             self.o_pkt_active.eq(pkt_active),
@@ -8337,19 +8233,19 @@ class RxNRZIDecoder(Module):
     -----------
     Input ports are passed in via the constructor.
 
-    i_valid : Signal(1)
+    i_valid : Signal("...", 1)
         Qualifier for all of the input signals.  Indicates one bit of valid
         data is present on the inputs.
 
-    i_dj : Signal(1)
+    i_dj : Signal("...", 1)
         Indicates the bus is currently in a Full-Speed J-state.
         Qualified by valid.
 
-    i_dk : Signal(1)
+    i_dk : Signal("...", 1)
         Indicates the bus is currently in a Full-Speed K-state.
         Qualified by valid.
 
-    i_se0 : Signal(1)
+    i_se0 : Signal("...", 1)
         Indicates the bus is currently in a SE0 state.
         Qualified by valid.
 
@@ -8357,33 +8253,33 @@ class RxNRZIDecoder(Module):
     ------------
     Output ports are data members of the module. All output ports are flopped.
 
-    o_valid : Signal(1)
+    o_valid : Signal("...", 1)
         Qualifier for all of the output signals. Indicates one bit of valid
         data is present on the outputs.
 
-    o_data : Signal(1)
+    o_data : Signal("...", 1)
         Decoded data bit from USB bus.
         Qualified by valid.
 
-    o_se0 : Signal(1)
+    o_se0 : Signal("...", 1)
         Indicates the bus is currently in a SE0 state.
         Qualified by valid.
     """
 
     def __init__(self):
-        self.i_valid = Signal()
-        self.i_dj = Signal()
-        self.i_dk = Signal()
-        self.i_se0 = Signal()
+        self.i_valid = Signal("i_valid")
+        self.i_dj = Signal("i_dj")
+        self.i_dk = Signal("i_dk")
+        self.i_se0 = Signal("i_se0")
 
         # pass all of the outputs through a pipe stage
-        self.o_valid = Signal(1)
-        self.o_data = Signal(1)
-        self.o_se0 = Signal(1)
+        self.o_valid = Signal("o_valid", 1)
+        self.o_data = Signal("o_data", 1)
+        self.o_se0 = Signal("o_se0", 1)
 
         if False:
-            valid = Signal(1)
-            data = Signal(1)
+            valid = Signal("valid", 1)
+            data = Signal("data", 1)
 
             # simple state machine decodes a JK transition as a '0' and no transition as a '1'.  se0 is ignored.
             self.submodules.nrzi = nrzi = FSM()
@@ -8422,7 +8318,7 @@ class RxNRZIDecoder(Module):
                 ),
             ]
         else:
-            last_data = Signal()
+            last_data = Signal("last_data")
             self.sync += [
                 If(self.i_valid,
                     last_data.eq(self.i_dk),
@@ -8453,32 +8349,32 @@ class RxShifter(Module):
 
     Input Ports
     -----------
-    i_valid : Signal(1)
+    i_valid : Signal("...", 1)
         Qualifier for all of the input signals.  Indicates one bit of valid
         data is present on the inputs.
 
-    i_data : Signal(1)
+    i_data : Signal("...", 1)
         Serial input data.
         Qualified by valid.
 
     Output Ports
     ------------
-    o_data : Signal(width)
+    o_data : Signal("...", width)
         Shifted in data.
 
-    o_put : Signal(1)
+    o_put : Signal("...", 1)
         Asserted for one clock once the register is full.
     """
 
     def __init__(self, width):
-        self.i_valid = Signal()
-        self.i_data = Signal()
+        self.i_valid = Signal("i_valid")
+        self.i_data = Signal("i_data")
 
-        self.o_data = Signal(width)
-        self.o_put = Signal()
+        self.o_data = Signal("o_data", width)
+        self.o_put = Signal("o_put")
 
         # Instead of using a counter, we will use a sentinel bit in the shift register to indicate when it is full.
-        shift_reg = Signal(width+1, reset=0b1)
+        shift_reg = Signal("shift_reg", width+1, reset=0b1)
 
         self.comb += self.o_data.eq(shift_reg[0:width])
         self.sync += [
@@ -8494,21 +8390,21 @@ class RxShifter(Module):
 
 class RxPipeline(Module):
     def __init__(self):
-        self.reset = Signal()
+        self.reset = Signal("reset")
 
         # 12MHz USB alignment pulse in 48MHz clock domain
-        self.o_bit_strobe = Signal()
+        self.o_bit_strobe = Signal("o_bit_strobe")
 
         # Reset state is J
-        self.i_usbp = Signal(reset=1)
-        self.i_usbn = Signal(reset=0)
+        self.i_usbp = Signal("i_usbp", reset=1)
+        self.i_usbn = Signal("i_usbn", reset=0)
 
-        self.o_data_strobe = Signal()
-        self.o_data_payload = Signal(8)
+        self.o_data_strobe = Signal("o_data_strobe")
+        self.o_data_payload = Signal("o_data_payload", 8)
 
-        self.o_pkt_start = Signal()
-        self.o_pkt_in_progress = Signal()
-        self.o_pkt_end = Signal()
+        self.o_pkt_start = Signal("o_pkt_start")
+        self.o_pkt_in_progress = Signal("o_pkt_in_progress")
+        self.o_pkt_end = Signal("o_pkt_end")
 
         # 48MHz domain
         # Clock recovery
@@ -8519,8 +8415,8 @@ class RxPipeline(Module):
         ]
 
         # A reset condition is one where the device is in SE0 for more than 2.5 uS, which is ~30 bit times.
-        self.o_reset = Signal()
-        reset_counter = Signal(7)
+        self.o_reset = Signal("o_reset")
+        reset_counter = Signal("reset_counter", 7)
         self.comb += self.o_reset.eq(reset_counter[6])
         self.sync.usb_48 += [
             If(clock_data_recovery.line_state_valid,
@@ -8545,7 +8441,7 @@ class RxPipeline(Module):
         ]
 
         # The packet detector asserts the reset of the pipeline.
-        reset = Signal()
+        reset = Signal("reset")
         detect = RxPacketDetect()
         self.submodules.detect = detect = ClockDomainsRenamer("usb_48")(detect)
         self.comb += [
@@ -8564,7 +8460,7 @@ class RxPipeline(Module):
             bitstuff.i_data.eq(nrzi.o_data),
         ]
 
-        last_reset = Signal()
+        last_reset = Signal("last_reset")
         self.sync.usb_48 += [
             last_reset.eq(reset),
         ]
@@ -8579,9 +8475,9 @@ class RxPipeline(Module):
         ]
 
         # Cross the data from the 48MHz domain to the 12MHz domain
-        flag_start = Signal()
-        flag_end = Signal()
-        flag_valid = Signal()
+        flag_start = Signal("flag_start")
+        flag_end = Signal("flag_end")
+        flag_valid = Signal("flag_valid")
         payloadFifo = _AsyncFIFO(8, 2)
         self.submodules.payloadFifo = payloadFifo = ClockDomainsRenamer({"write":"usb_48", "read":"usb_12"})(payloadFifo)
 
@@ -8642,28 +8538,28 @@ class TxBitstuffer(Module):
 
     Input Ports
     ------------
-    i_data : Signal(1)
+    i_data : Signal("...", 1)
         Data bit to be transmitted on USB.
 
     Output Ports
     ------------
-    o_data : Signal(1)
+    o_data : Signal("...", 1)
         Data bit to be transmitted on USB.
 
-    o_stall : Signal(1)
+    o_stall : Signal("...", 1)
         Used to apply backpressure on the tx pipeline.
     """
 
     def __init__(self):
-        self.i_data = Signal()
+        self.i_data = Signal("i_data")
 
-        self.o_stall = Signal(1)
-        self.o_will_stall = Signal(1)
-        self.o_data = Signal(1)
+        self.o_stall = Signal("o_stall", 1)
+        self.o_will_stall = Signal("o_will_stall", 1)
+        self.o_data = Signal("o_data", 1)
 
         self.submodules.stuff = stuff = FSM()
 
-        stuff_bit = Signal(1)
+        stuff_bit = Signal("stuff_bit", 1)
 
         for i in range(5):
             stuff.act("D%d" % i,
@@ -8728,42 +8624,42 @@ class TxNRZIEncoder(Module):
 
     Input Ports
     -----------
-    i_valid : Signal(1)
+    i_valid : Signal("...", 1)
         Qualifies oe, data, and se0.
 
-    i_oe : Signal(1)
+    i_oe : Signal("...", 1)
         Indicates that the transmit pipeline should be driving USB.
 
-    i_data : Signal(1)
+    i_data : Signal("...", 1)
         Data bit to be transmitted on USB. Qualified by o_valid.
 
-    i_se0 : Signal(1)
+    i_se0 : Signal("...", 1)
         Overrides value of o_data when asserted and indicates that SE0 state
         should be asserted on USB. Qualified by o_valid.
 
     Output Ports
     ------------
-    o_usbp : Signal(1)
+    o_usbp : Signal("...", 1)
         Raw value of USB+ line.
 
-    o_usbn : Signal(1)
+    o_usbn : Signal("...", 1)
         Raw value of USB- line.
 
-    o_oe : Signal(1)
+    o_oe : Signal("...", 1)
         When asserted it indicates that the tx pipeline should be driving USB.
     """
 
     def __init__(self):
-        self.i_valid = Signal()
-        self.i_oe = Signal()
-        self.i_data = Signal()
+        self.i_valid = Signal("i_valid")
+        self.i_oe = Signal("i_oe")
+        self.i_data = Signal("i_data")
 
         # Simple state machine to perform NRZI encoding.
         self.submodules.nrzi = nrzi = FSM()
 
-        usbp = Signal(1)
-        usbn = Signal(1)
-        oe = Signal(1)
+        usbp = Signal("usbp", 1)
+        usbn = Signal("usbn", 1)
+        oe = Signal("oe", 1)
 
         # wait for new packet to start
         nrzi.act("IDLE",
@@ -8846,9 +8742,9 @@ class TxNRZIEncoder(Module):
         )
 
         # flop all outputs
-        self.o_usbp = Signal(1)
-        self.o_usbn = Signal(1)
-        self.o_oe = Signal(1)
+        self.o_usbp = Signal("o_usbp", 1)
+        self.o_usbn = Signal("o_usbn", 1)
+        self.o_oe = Signal("o_oe", 1)
 
         self.sync += [
             self.o_oe.eq(oe),
@@ -8874,35 +8770,35 @@ class TxShifter(Module):
     -----------
     Input ports are passed in via the constructor.
 
-    i_data : Signal(width)
+    i_data : Signal("...", width)
         Data to be transmitted.
 
     Output Ports
     ------------
     Output ports are data members of the module. All outputs are flopped.
 
-    o_data : Signal(1)
+    o_data : Signal("...", 1)
         Serial data output.
 
-    o_empty : Signal(1)
+    o_empty : Signal("...", 1)
         Asserted the cycle before the shifter loads in more i_data.
 
-    o_get : Signal(1)
+    o_get : Signal("...", 1)
         Asserted the cycle after the shifter loads in i_data.
 
     """
 
     def __init__(self, width):
-        self.i_data = Signal(width)
-        self.o_get = Signal(1)
-        self.o_empty = Signal(1)
+        self.i_data = Signal("i_data", width)
+        self.o_get = Signal("o_get", 1)
+        self.o_empty = Signal("o_empty", 1)
 
-        self.o_data = Signal(1)
+        self.o_data = Signal("o_data", 1)
 
-        shifter = Signal(width)
-        pos = Signal(width, reset=0b1)
+        shifter = Signal("shifter", width)
+        pos = Signal("pos", width, reset=0b1)
 
-        empty = Signal(1)
+        empty = Signal("empty", 1)
         self.sync += [
             pos.eq(pos >> 1),
             shifter.eq(shifter >> 1),
@@ -9095,26 +8991,26 @@ class TxParallelCrcGenerator(Module):
 
     Input Ports
     ------------
-    i_data_payload : Signal(8)
+    i_data_payload : Signal("...", 8)
         Byte wide data to generate CRC for.
 
-    i_data_strobe : Signal(1)
+    i_data_strobe : Signal("...", 1)
         Strobe signal for the payload.
 
     Output Ports
     ------------
-    o_crc : Signal(width)
+    o_crc : Signal("...", width)
         Current CRC value.
 
     """
 
     def __init__(self, data_width, crc_width, polynomial, initial=0):
-        self.i_data_payload = Signal(data_width)
-        self.i_data_strobe = Signal()
-        self.o_crc = Signal(crc_width)
-        crc_dat = Signal(data_width)
-        crc_cur = Signal(crc_width, reset=initial)
-        crc_next = Signal(crc_width, reset_less=True)
+        self.i_data_payload = Signal("i_data_payload", data_width)
+        self.i_data_strobe = Signal("i_data_strobe")
+        self.o_crc = Signal("o_crc", crc_width)
+        crc_dat = Signal("crc_dat", data_width)
+        crc_cur = Signal("crc_cur", crc_width, reset=initial)
+        crc_next = Signal("crc_next", crc_width, reset_less=True)
 
         crc_cur_reset_bits = [int(i) for i in "{0:0{width}b}".format(crc_cur.reset.value,width=crc_width)[::-1]]
 
@@ -9161,18 +9057,18 @@ class TxParallelCrcGenerator(Module):
 
 class TxPipeline(Module):
     def __init__(self):
-        self.i_bit_strobe = Signal()
+        self.i_bit_strobe = Signal("i_bit_strobe")
 
-        self.i_data_payload = Signal(8)
-        self.o_data_strobe = Signal()
+        self.i_data_payload = Signal("i_data_payload", 8)
+        self.o_data_strobe = Signal("o_data_strobe")
 
-        self.i_oe = Signal()
+        self.i_oe = Signal("i_oe")
 
-        self.o_usbp = Signal()
-        self.o_usbn = Signal()
-        self.o_oe = Signal()
+        self.o_usbp = Signal("o_usbp")
+        self.o_usbn = Signal("o_usbn")
+        self.o_oe = Signal("o_oe")
 
-        self.o_pkt_end = Signal()
+        self.o_pkt_end = Signal("o_pkt_end")
 
         tx_pipeline_fsm = FSM()
         self.submodules.tx_pipeline_fsm = ClockDomainsRenamer("usb_12")(tx_pipeline_fsm)
@@ -9183,29 +9079,29 @@ class TxPipeline(Module):
         nrzi = TxNRZIEncoder()
         self.submodules.nrzi = ClockDomainsRenamer("usb_48")(nrzi)
 
-        sync_pulse = Signal(8)
+        sync_pulse = Signal("sync_pulse", 8)
 
-        self.fit_dat = fit_dat = Signal()
-        self.fit_oe  = fit_oe  = Signal()
+        self.fit_dat = fit_dat = Signal("fit_dat")
+        self.fit_oe  = fit_oe  = Signal("fit_oe")
 
-        da_reset_shifter = Signal()
-        da_reset_bitstuff = Signal() # Need to reset the bit stuffer 1 cycle after the shifter.
-        stall = Signal()
+        da_reset_shifter = Signal("da_reset_shifter")
+        da_reset_bitstuff = Signal("da_reset_bitstuff") # Need to reset the bit stuffer 1 cycle after the shifter.
+        stall = Signal("stall")
 
         # These signals are set during the sync pulse
-        sp_reset_bitstuff = Signal()
-        sp_reset_shifter = Signal()
-        sp_bit = Signal()
-        sp_o_data_strobe = Signal()
+        sp_reset_bitstuff = Signal("sp_reset_bitstuff")
+        sp_reset_shifter = Signal("sp_reset_shifter")
+        sp_bit = Signal("sp_bit")
+        sp_o_data_strobe = Signal("sp_o_data_strobe")
 
         # 12MHz domain
-        da_stalled_reset = Signal()
-        bitstuff_valid_data = Signal()
+        da_stalled_reset = Signal("da_stalled_reset")
+        bitstuff_valid_data = Signal("bitstuff_valid_data")
 
         # Keep a Gray counter around to smoothly transition between states
-        state_gray = Signal(2)
-        state_data = Signal()
-        state_sync = Signal()
+        state_gray = Signal("state_gray", 2)
+        state_data = Signal("state_data")
+        state_sync = Signal("state_sync")
 
         self.comb += [
             shifter.i_data.eq(self.i_data_payload),
@@ -9286,8 +9182,8 @@ class TxPipeline(Module):
 
         # 48MHz domain
         # NRZI encoding
-        nrzi_dat = Signal()
-        nrzi_oe = Signal()
+        nrzi_dat = Signal("nrzi_dat")
+        nrzi_oe = Signal("nrzi_oe")
 
         # Cross the data from the 12MHz domain to the 48MHz domain
         cdc_dat = MultiReg(fit_dat, nrzi_dat, odomain="usb_48", n=3)
@@ -9308,12 +9204,12 @@ class PacketHeaderDecode(Module):
     def __init__(self, rx):
         self.submodules.rx = rx
 
-        self.o_pid = Signal(4)
-        self.o_addr = Signal(7)
-        endp4 = Signal()
-        self.o_endp = Signal(4)
-        crc5 = Signal(5)
-        self.o_decoded = Signal()
+        self.o_pid = Signal("o_pid", 4)
+        self.o_addr = Signal("o_addr", 7)
+        endp4 = Signal("endp4")
+        self.o_endp = Signal("o_endp", 4)
+        crc5 = Signal("crc5", 5)
+        self.o_decoded = Signal("o_decoded")
 
         # FIXME: This whole module should just be in the usb_12 clock domain?
         self.submodules.fsm = fsm = ClockDomainsRenamer("usb_12")(FSM())
@@ -9356,18 +9252,18 @@ class TxPacketSend(Module):
     def __init__(self, tx, auto_crc=True):
         self.submodules.tx = tx
 
-        self.i_pkt_start = Signal()
-        self.o_pkt_end = Signal()
+        self.i_pkt_start = Signal("i_pkt_start")
+        self.o_pkt_end = Signal("o_pkt_end")
 
-        self.i_pid = Signal(4)
-        self.i_data_payload = Signal(8)
-        self.i_data_ready = Signal()
-        self.o_data_ack = Signal()
+        self.i_pid = Signal("i_pid", 4)
+        self.i_data_payload = Signal("i_data_payload", 8)
+        self.i_data_ready = Signal("i_data_ready")
+        self.o_data_ack = Signal("o_data_ack")
 
-        o_oe12 = Signal()
+        o_oe12 = Signal("o_oe12")
         self.specials += MultiReg(tx.o_oe, o_oe12, odomain="usb_12", n=1)
 
-        pid = Signal(4)
+        pid = Signal("pid", 4)
 
         fsm = FSM()
         self.submodules.fsm = fsm = ClockDomainsRenamer("usb_12")(fsm)
@@ -9483,27 +9379,27 @@ class UsbTransfer(Module):
         ]
 
         # Whether to reset the FSM
-        self.reset = Signal()
+        self.reset = Signal("reset")
 
         # The state of the USB reset (SE0) signal
-        self.usb_reset = Signal()
+        self.usb_reset = Signal("usb_reset")
         self.comb += self.usb_reset.eq(rx.o_reset)
 
         # Data paths
-        self.data_recv_put = Signal()
-        self.data_recv_payload = Signal(8)
+        self.data_recv_put = Signal("data_recv_put")
+        self.data_recv_payload = Signal("data_recv_payload", 8)
 
-        self.data_send_get = Signal()
-        self.data_send_have = Signal()
-        self.data_send_payload = Signal(8)
+        self.data_send_get = Signal("data_send_get")
+        self.data_send_have = Signal("data_send_have")
+        self.data_send_payload = Signal("data_send_payload", 8)
 
         # State signally
         # The value of these signals are generally dependent on endp, so we need to wait for the rdy signal to use them.
-        self.rdy  = Signal(reset=1)
-        self.dtb  = Signal()
-        self.arm  = Signal()
-        self.sta  = Signal()
-        self.addr = Signal(7)       # If the address doesn't match, we won't respond
+        self.rdy  = Signal("rdy", reset=1)
+        self.dtb  = Signal("dtb")
+        self.arm  = Signal("arm")
+        self.sta  = Signal("sta")
+        self.addr = Signal("addr", 7) # If the address doesn't match, we won't respond
 
         # Tristate
         self.submodules.iobuf = iobuf
@@ -9515,19 +9411,20 @@ class UsbTransfer(Module):
             iobuf.usb_n_tx.eq(tx.o_usbn),
         ]
 
-        self.tok    = Signal(4)     # Contains the transfer token type
-        self.endp   = Signal(4)
+        self.tok  = Signal("tok", 4)  # Contains the transfer token type
+        self.endp = Signal("endp", 4)
 
-        self.idle   = Signal(reset=0)      # Asserted when in the "WAIT_TOKEN" state
-        self.start  = Signal()      # Asserted when a transfer is starting
-        self.poll   = Signal()      # Asserted when polling for a response (i.e. one cycle after `self.start`)
-        self.setup  = Signal()      # Asserted when a transfer is a setup
-        self.commit = Signal()      # Asserted when a transfer succeeds
-        self.retry  = Signal()      # Asserted when the host sends an IN without an ACK
-        self.abort  = Signal()      # Asserted when a transfer fails
-        self.end    = Signal()      # Asserted when transfer ends
-        self.data_end=Signal()      # Asserted when a DATAx transfer finishes
-        self.error  = Signal()      # Asserted when in the ERROR state
+        self.idle     = Signal("idle", reset=0) # Asserted when in the "WAIT_TOKEN" state
+        self.start    = Signal("start")         # Asserted when a transfer is starting
+        self.poll     = Signal("poll")          # Asserted when polling for a response (i.e. one cycle after `self.start`)
+        self.setup    = Signal("setup")         # Asserted when a transfer is a setup
+        self.commit   = Signal("commit")        # Asserted when a transfer succeeds
+        self.retry    = Signal("retry")         # Asserted when the host sends an IN without an ACK
+        self.abort    = Signal("abort")         # Asserted when a transfer fails
+        self.end      = Signal("end")           # Asserted when transfer ends
+        self.data_end = Signal("data_end")      # Asserted when a DATAx transfer finishes
+        self.error    = Signal("error")         # Asserted when in the ERROR state
+
         self.comb += [
             self.end.eq(self.commit | self.abort),
         ]
@@ -9594,7 +9491,7 @@ class UsbTransfer(Module):
             ),
         )
 
-        response_pid = Signal(4)
+        response_pid = Signal("response_pid", 4)
         transfer.act("POLL_RESPONSE",
             self.poll.eq(1),
             If(self.rdy,
@@ -9776,22 +9673,22 @@ class USBWishboneBridge(Module):
                 ]}
         """
 
-        byte_counter = Signal(3, reset_less=True)
-        byte_counter_reset = Signal()
-        byte_counter_ce = Signal()
+        byte_counter = Signal("byte_counter", 3, reset_less=True)
+        byte_counter_reset = Signal("byte_counter_reset")
+        byte_counter_ce = Signal("byte_counter_ce")
         self.sync.usb_12 += If(byte_counter_reset, byte_counter.eq(0)).Elif(byte_counter_ce, byte_counter.eq(byte_counter + 1))
 
         # Unlike the UART or Ethernet bridges, we explicitly only support two commands: reading and writing.
         # This gets integrated into the USB protocol, so it's not really a state.  1 is "USB Device to Host",
         # and is therefore a "read", while 0 is "USB Host to Device", and is therefore a "write".
-        cmd = Signal(1, reset_less=True)
-        cmd_ce = Signal()
+        cmd = Signal("cmd", 1, reset_less=True)
+        cmd_ce = Signal("cmd_ce")
 
         # Add a bridge to allow this module (in the usb_12 domain) to access the main Wishbone bridge (potentially in some other domain).
         # Ensure this bridge is placed in the "sys" domain.
-        send_to_wishbone = Signal()
-        reply_from_wishbone = Signal()
-        transfer_active = Signal()
+        send_to_wishbone = Signal("send_to_wishbone")
+        reply_from_wishbone = Signal("reply_from_wishbone")
+        transfer_active = Signal("transfer_active")
         if cdc:
             self.submodules.wb_cd_bridge = wb_cd_bridge = FSM(reset_state="IDLE")
             self.submodules.usb_to_wb = usb_to_wb = PulseSynchronizer("usb_12", "sys")
@@ -9805,24 +9702,24 @@ class USBWishboneBridge(Module):
             ]
 
         # Instead of self.source and self.sink, we let the wrapping module handle packing and unpacking the data.
-        self.sink_data = Signal(8)
+        self.sink_data = Signal("sink_data", 8)
 
         # True when the "sink" value has data
-        self.sink_valid = Signal()
+        self.sink_valid = Signal("sink_valid")
 
-        self.send_ack = Signal()
+        self.send_ack = Signal("send_ack")
 
         # Indicates whether a "debug" packet is currently being processed
-        self.n_debug_in_progress = Signal(reset=1)
+        self.n_debug_in_progress = Signal("n_debug_in_progress", reset=1)
 
-        address = Signal(32, reset_less=True)
-        address_ce = Signal()
+        address = Signal("address", 32, reset_less=True)
+        address_ce = Signal("address_ce")
 
-        data = Signal(32, reset_less=True)
-        rd_data = Signal(32, reset_less=True)
-        rx_data_ce = Signal()
+        data = Signal("data", 32, reset_less=True)
+        rd_data = Signal("rd_data", 32, reset_less=True)
+        rx_data_ce = Signal("rx_data_ce")
 
-        # wishbone_response = Signal(32, reset_less=True)
+        # wishbone_response = Signal("wishbone_response", 32, reset_less=True)
         self.sync.usb_12 += [
             If(cmd_ce, cmd.eq(usb_core.data_recv_payload[7:8])),
             If(address_ce, address.eq(Cat(address[8:32], usb_core.data_recv_payload))),
@@ -10200,7 +10097,7 @@ class TriEndpointInterface(Module, AutoCSR):
         self.iobuf = usb_core.iobuf
 
         # Generate debug signals, in case debug is enabled.
-        debug_packet_detected = Signal()
+        debug_packet_detected = Signal("debug_packet_detected")
 
         # Wire up debug signals if required
         if debug:
@@ -10251,8 +10148,8 @@ class TriEndpointInterface(Module, AutoCSR):
 
         self.submodules.ev = SharedIRQ(*ems)
 
-        in_next = Signal()
-        out_next = Signal()
+        in_next = Signal("in_next")
+        out_next = Signal("out_next")
         self.sync += [
             If(usb_core.usb_reset,
                 in_next.eq(0),
@@ -10287,7 +10184,7 @@ class TriEndpointInterface(Module, AutoCSR):
         # If a debug packet comes in, the DTB should be 1.
         # Otherwise, the DTB should be whatever the in_handler says it is.
         self.comb += usb_core.dtb.eq(in_handler.dtb | debug_packet_detected)
-        usb_core_reset = Signal()
+        usb_core_reset = Signal("usb_core_reset")
 
         self.submodules.stage = stage = ClockDomainsRenamer("usb_12")(ResetInserter()(FSM(reset_state="IDLE")))
         self.comb += stage.reset.eq(usb_core.usb_reset)
@@ -10409,7 +10306,7 @@ class SetupHandler(Module, AutoCSR):
         Assert this when a ``SETUP`` token is received.  This will clear out the current buffer
         (if any) and prepare the endpoint to receive data.
 
-    epno : Signal(4)
+    epno : Signal("...", 4)
         The endpoint number the SETUP packet came in on (probably is always ``0``)
 
     is_in : Signal
@@ -10423,10 +10320,10 @@ class SetupHandler(Module, AutoCSR):
 
     def __init__(self, usb_core):
 
-        self.reset = Signal()
-        self.begin = Signal()
-        self.epno = epno = Signal()
-        self.usb_reset = Signal()
+        self.reset = Signal("reset")
+        self.begin = Signal("begin")
+        self.epno = epno = Signal("epno")
+        self.usb_reset = Signal("usb_reset")
 
         # Register Interface
         self.data = data = CSRStatus("data",
@@ -10458,26 +10355,26 @@ class SetupHandler(Module, AutoCSR):
         self.pending = pending = self.ev.packet.pending
         self.comb += self.ev.reset.trigger.eq(~self.usb_reset)
 
-        self.data_recv_payload = data_recv_payload = Signal(8)
-        self.data_recv_put = data_recv_put = Signal()
+        self.data_recv_payload = data_recv_payload = Signal("data_recv_payload", 8)
+        self.data_recv_put = data_recv_put = Signal("data_recv_put")
 
         # Since we must always ACK a SETUP packet, set this to 0.
-        self.response = Signal()
+        self.response = Signal("response")
 
         class SetupHandlerInner(Module):
             def __init__(self):
                 self.submodules.data = buf = _SyncFIFOBuffered(width=8, depth=10)
 
                 # Indicates which byte of `SETUP` data we're currently on.
-                data_byte = Signal(4)
+                data_byte = Signal("data_byte", 4)
 
                 # If the incoming `SETUP` token indicates there will be a DATA stage, this will be set to 1.
-                self.have_data_stage = have_data_stage = Signal()
+                self.have_data_stage = have_data_stage = Signal("have_data_stage")
 
                 # If the incoming `SETUP` token is an OUT packet, this will be 1.
-                self.is_in = is_in = Signal()
+                self.is_in = is_in = Signal("is_in")
 
-                self.empty = Signal()
+                self.empty = Signal("empty")
                 self.comb += self.empty.eq(~buf.readable)
 
                 # Wire up the `STATUS` register
@@ -10550,13 +10447,13 @@ class InHandler(Module, AutoCSR):
 
     """
     def __init__(self, usb_core):
-        self.dtb = Signal()
+        self.dtb = Signal("dtb")
 
         # Keep track of the current DTB for each of the 16 endpoints
-        dtbs = Signal(16, reset=0x0001)
+        dtbs = Signal("dtbs", 16, reset=0x0001)
 
         # A list of endpoints that are stalled
-        stall_status = Signal(16)
+        stall_status = Signal("stall_status", 16)
 
         self.submodules.data_buf = buf = ResetInserter()(_SyncFIFOBuffered(width=8, depth=64))
 
@@ -10593,13 +10490,13 @@ class InHandler(Module, AutoCSR):
         self.ev.finalize()
 
         # Control bits
-        ep_stall_mask = Signal(16)
+        ep_stall_mask = Signal("ep_stall_mask", 16)
         self.comb += [
             ep_stall_mask.eq(1 << ctrl.fields.epno),
         ]
 
         # Keep track of which endpoints are currently stalled
-        self.stalled = Signal()
+        self.stalled = Signal("stalled")
         self.comb += self.stalled.eq(stall_status >> usb_core.endp)
         self.sync += [
             If(ctrl.fields.reset,
@@ -10615,33 +10512,33 @@ class InHandler(Module, AutoCSR):
         # How to respond to requests:
         #  - 0 - ACK
         #  - 1 - NAK
-        self.response = Signal()
+        self.response = Signal("response")
 
         # This value goes "1" when data is pending, and returns to "0" when it's done.
-        queued = Signal()
-        was_queued = Signal()
+        queued = Signal("queued")
+        was_queued = Signal("was_queued")
 
         # This goes to "1" when "queued" is 1 when a "start" occurs.  It is used
         # to avoid skipping packets when a packet is queued during a transmission.
-        transmitted = Signal()
+        transmitted = Signal("transmitted")
 
-        self.dtb_reset = Signal()
+        self.dtb_reset = Signal("dtb_reset")
         self.comb += [
             buf.reset.eq(ctrl.fields.reset | (usb_core.commit & transmitted & queued)),
         ]
 
         # Outgoing data will be placed on this signal
-        self.data_out = Signal(8)
+        self.data_out = Signal("data_out", 8)
 
         # This is "1" if `data_out` contains data
-        self.data_out_have = Signal()
+        self.data_out_have = Signal("data_out_have")
 
         # Pulse this to advance the data output
-        self.data_out_advance = Signal()
+        self.data_out_advance = Signal("data_out_advance")
 
         # Used to detect when an IN packet finished
-        is_our_packet = Signal()
-        is_in_packet = Signal()
+        is_our_packet = Signal("is_our_packet")
+        is_in_packet = Signal("is_in_packet")
 
         self.comb += [
             # We will respond with "ACK" if the register matches the current endpoint number
@@ -10753,13 +10650,13 @@ class OutHandler(Module, AutoCSR):
             Indicates that an ``OUT`` packet has successfully been transferred from the host.  This bit must be cleared in order to receive additional packets.""")
         self.ev.finalize()
 
-        self.usb_reset = Signal()
+        self.usb_reset = Signal("usb_reset")
 
-        self.stalled = Signal()
-        self.enabled = Signal()
-        stall_status = Signal(16)
-        enable_status = Signal(16)
-        ep_mask = Signal(16, reset=1)
+        self.stalled = Signal("stalled")
+        self.enabled = Signal("enabled")
+        stall_status = Signal("stall_status", 16)
+        enable_status = Signal("enable_status", 16)
+        ep_mask = Signal("ep_mask", 16, reset=1)
         self.comb += [
             If(usb_core.setup | usb_core.commit,
                 ep_mask.eq(1 << usb_core.endp),
@@ -10781,15 +10678,15 @@ class OutHandler(Module, AutoCSR):
         ]
 
         # The endpoint number of the most recently received packet
-        epno = Signal(4)
+        epno = Signal("epno", 4)
 
         # How to respond to requests:
         #  - 1 - ACK
         #  - 0 - NAK
         # Send a NAK if the buffer contains data, or if "ENABLE" has not been set.
-        self.response = Signal()
-        responding = Signal()
-        is_out_packet = Signal()
+        self.response = Signal("response")
+        responding = Signal("responding")
+        is_out_packet = Signal("is_out_packet")
 
         # Keep track of whether we're currently responding.
         self.comb += is_out_packet.eq(usb_core.tok == PID.OUT)
@@ -10797,8 +10694,8 @@ class OutHandler(Module, AutoCSR):
         self.sync += If(usb_core.poll, responding.eq(self.response))
 
         # Connect the buffer to the USB system
-        self.data_recv_payload = Signal(8)
-        self.data_recv_put = Signal()
+        self.data_recv_payload = Signal("data_recv_payload", 8)
+        self.data_recv_put = Signal("data_recv_put")
         self.comb += [
             buf.din.eq(self.data_recv_payload),
             buf.we.eq(self.data_recv_put & responding),
@@ -10875,19 +10772,19 @@ class CSRTransform(ModuleTransformer):
                 setattr(c.re0, "name", c.name + "_re0")
 
                 # Our personal .re signal will then update .re0 alongside .storage
-                setattr(c, "re", Signal(name=c.name + "_re"))
+                setattr(c, "re", Signal(c.name + "_re"))
                 c.sync += c.re0.eq(c.re)
 
                 if hasattr(c, "fields"):
                     setattr(c, "dat_w", Record([]))
                     for a in c.fields.fields:
-                        s = Signal(a.size,name=f'{c.name}_{a.name}0')
+                        s = Signal(c.name + "_" + a.name + "0", a.size)
 
                         c.sync += If(c.re, c.storage[a.offset:a.offset + a.size].eq(s))
                         setattr(c.dat_w, a.name, s)
                 else:
                     # if the CSRStorage doesn't have any fields, just provide .dat_w
-                    setattr(c, "dat_w", Signal(c.size))
+                    setattr(c, "dat_w", Signal("dat_w", c.size))
                     c.sync += If(c.re, c.storage.eq(c.dat_w))
 
 class CDCUsb(Module, AutoCSR):
@@ -10918,10 +10815,10 @@ class CDCUsb(Module, AutoCSR):
         self.sink   = Endpoint([("data", 8)])
         self.source = Endpoint([("data", 8)])
 
-        self.rts = Signal()
-        self.dtr = Signal()
+        self.rts = Signal("rts")
+        self.dtr = Signal("dtr")
 
-        self.async_rst = Signal()
+        self.async_rst = Signal("async_rst")
 
         self.specials += MultiReg(phy.rts, self.rts)
         self.specials += MultiReg(phy.dtr, self.dtr)
@@ -10984,8 +10881,8 @@ class CDCUsbPHY(Module):
         self.sink   = Endpoint([("data", 8)])
         self.source = Endpoint([("data", 8)])
 
-        self.rts = Signal()
-        self.dtr = Signal()
+        self.rts = Signal("rts")
+        self.dtr = Signal("dtr")
 
         # Ato attach on power up
         self.comb += [
@@ -11162,18 +11059,18 @@ class CDCUsbPHY(Module):
         self.autocsr_exclude = ['out_buffer']
 
         # Needs to be able to index Memory
-        response_addr = Signal(9)
-        response_len = Signal(6)
-        response_ack = Signal()
-        bytes_remaining = Signal(6)
-        bytes_addr = Signal(9)
+        response_addr = Signal("response_addr", 9)
+        response_len = Signal("response_len", 6)
+        response_ack = Signal("response_ack")
+        bytes_remaining = Signal("bytes_remaining", 6)
+        bytes_addr = Signal("bytes_addr", 9)
 
-        new_address = Signal(7)
+        new_address = Signal("new_address", 7)
 
-        configured = Signal()
-        configured_delay = Signal(16, reset=2**16-1)
+        configured = Signal("configured")
+        configured_delay = Signal("configured_delay", 16, reset=2**16-1)
 
-        self.configure_set = Signal()
+        self.configure_set = Signal("configure_set")
 
         self.sync += [
             If(self.dtr & (configured_delay > 0),
@@ -11186,15 +11083,15 @@ class CDCUsbPHY(Module):
 
         # SETUP packets contain a DATA segment that is always 8 bytes.
         # However, we're only ever interested in the first 4 bytes, plus the last byte.
-        usbPacket = Signal(32)
-        wRequestAndType = Signal(16)
-        wValue = Signal(16)
-        wLength = Signal(8)
+        usbPacket = Signal("usbPacket", 32)
+        wRequestAndType = Signal("wRequestAndType", 16)
+        wValue = Signal("wValue", 16)
+        wLength = Signal("wLength", 8)
         self.comb += [
             wRequestAndType.eq(usbPacket[16:32]),
             wValue.eq(usbPacket[0:16]),
         ]
-        setup_index = Signal(4)
+        setup_index = Signal("setup_index", 4)
 
         # Respond to various descriptor requests
         cases = {}
@@ -11207,7 +11104,7 @@ class CDCUsbPHY(Module):
 
         self.submodules.config = config = FSM(reset_state="IDLE")
 
-        toggle = Signal()
+        toggle = Signal("toggle")
 
         config.act("IDLE",
             #usb.address.dat_w.eq(new_address),
@@ -11253,7 +11150,7 @@ class CDCUsbPHY(Module):
             )
         )
 
-        delayed_re = Signal()
+        delayed_re = Signal("delayed_re")
         config.act("FILL-TX",
             usb.in_data.dat_w.data.eq(self.source.data),
 
@@ -11273,11 +11170,11 @@ class CDCUsbPHY(Module):
 
         # OUT data always captures 2 extra bytes from CRC
         # Since we don't know in advance how long the transaction was we need to account for this now
-        data_d1 = Signal(8)
-        re_d1 = Signal()
+        data_d1 = Signal("data_d1", 8)
+        re_d1 = Signal("re_d1")
 
-        data_d2 = Signal(8)
-        re_d2 = Signal()
+        data_d2 = Signal("data_d2", 8)
+        re_d2 = Signal("re_d2")
 
         config.act("DRAIN-RX",
             self.sink.data.eq(data_d2),
@@ -11431,20 +11328,20 @@ class PicoRV32(Module):
     def __init__(self, platform, variant="standard"):
         self.platform     = platform
         self.variant      = variant
-        self.trap         = Signal()
-        self.reset        = Signal()
-        self.interrupt    = Signal(32)
+        self.trap         = Signal("trap")
+        self.reset        = Signal("reset")
+        self.interrupt    = Signal("interrupt", 32)
         self.idbus        = idbus = WishboneInterface()
         self.periph_buses = [idbus]
         self.memory_buses = []
 
-        mem_valid = Signal()
-        mem_instr = Signal()
-        mem_ready = Signal()
-        mem_addr  = Signal(32)
-        mem_wdata = Signal(32)
-        mem_wstrb = Signal(4)
-        mem_rdata = Signal(32)
+        mem_valid = Signal("mem_valid")
+        mem_instr = Signal("mem_instr")
+        mem_ready = Signal("mem_ready")
+        mem_addr  = Signal("mem_addr", 32)
+        mem_wdata = Signal("mem_wdata", 32)
+        mem_wstrb = Signal("mem_wstrb", 4)
+        mem_rdata = Signal("mem_rdata", 32)
 
         # PicoRV32 parameters. To create a new variant, modify this dictionary
         # and change the desired parameters.
@@ -11504,17 +11401,17 @@ class PicoRV32(Module):
             i_mem_rdata = mem_rdata,
 
             # look ahead interface (not used)
-            o_mem_la_read  = Signal(),
-            o_mem_la_write = Signal(),
-            o_mem_la_addr  = Signal(32),
-            o_mem_la_wdata = Signal(32),
-            o_mem_la_wstrb = Signal(4),
+            o_mem_la_read  = Signal("o_mem_la_read"),
+            o_mem_la_write = Signal("o_mem_la_write"),
+            o_mem_la_addr  = Signal("o_mem_la_addr", 32),
+            o_mem_la_wdata = Signal("o_mem_la_wdata", 32),
+            o_mem_la_wstrb = Signal("o_mem_la_wstrb", 4),
 
             # co-processor interface (not used)
-            o_pcpi_valid = Signal(),
-            o_pcpi_insn  = Signal(32),
-            o_pcpi_rs1   = Signal(32),
-            o_pcpi_rs2   = Signal(32),
+            o_pcpi_valid = Signal("o_pcpi_valid"),
+            o_pcpi_insn  = Signal("o_pcpi_insn", 32),
+            o_pcpi_rs1   = Signal("o_pcpi_rs1", 32),
+            o_pcpi_rs2   = Signal("o_pcpi_rs2", 32),
             i_pcpi_wr    = 0,
             i_pcpi_rd    = 0,
             i_pcpi_wait  = 0,
@@ -11522,7 +11419,7 @@ class PicoRV32(Module):
 
             # irq interface
             i_irq = self.interrupt,
-            o_eoi = Signal(32)) # not used
+            o_eoi = Signal("o_eoi", 32)) # not used
 
         # adapt memory interface to wishbone
         self.comb += [
@@ -11836,7 +11733,7 @@ class SoCCSRHandler(SoCLocHandler):
 
     def address_map(self, name, memory):
         if memory is not None:
-            name = name + "_" + memory.name_override
+            name = name + "_" + memory.name
         if self.locs.get(name, None) is None:
             raise
         return self.locs[name]
@@ -11867,13 +11764,13 @@ class SoCController(Module, AutoCSR):
 
         # Reset
         if with_reset:
-            self.reset = Signal()
+            self.reset = Signal("reset")
             self.comb += self.reset.eq(self._reset.re)
 
         # Errors
         if with_errors:
-            self.bus_error = Signal()
-            bus_errors     = Signal(32)
+            self.bus_error = Signal("bus_error")
+            bus_errors     = Signal("bus_errors", 32)
             self.sync += [
                 If(bus_errors != (2**len(bus_errors)-1),
                     If(self.bus_error, bus_errors.eq(bus_errors + 1))
@@ -11998,16 +11895,16 @@ def nextpnr_ecp5_parse_device(device):
     return (family, size, speed_grade, package)
 
 nextpnr_ecp5_architectures = {
-    "lfe5u-12f"   : "12k",
-    "lfe5u-25f"   : "25k",
-    "lfe5u-45f"   : "45k",
-    "lfe5u-85f"   : "85k",
-    "lfe5um-25f"  : "um-25k",
-    "lfe5um-45f"  : "um-45k",
-    "lfe5um-85f"  : "um-85k",
-    "lfe5um5g-25f": "um5g-25k",
-    "lfe5um5g-45f": "um5g-45k",
-    "lfe5um5g-85f": "um5g-85k",
+    "lfe5u-12f"    : "12k",
+    "lfe5u-25f"    : "25k",
+    "lfe5u-45f"    : "45k",
+    "lfe5u-85f"    : "85k",
+    "lfe5um-25f"   : "um-25k",
+    "lfe5um-45f"   : "um-45k",
+    "lfe5um-85f"   : "um-85k",
+    "lfe5um5g-25f" : "um5g-25k",
+    "lfe5um5g-45f" : "um5g-45k",
+    "lfe5um5g-85f" : "um5g-85k",
 }
 
 _build_template = [
@@ -12038,7 +11935,7 @@ def _build_script(source, build_template, build_name, architecture, package, spe
 
 class LatticeECP5AsyncResetSynchronizerImpl(Module):
     def __init__(self, cd, async_reset):
-        rst1 = Signal()
+        rst1 = Signal("rst1")
         self.specials += [
             Instance("FD1S3BX",
                 i_D  = 0,
@@ -12243,7 +12140,7 @@ class ConstraintManager:
         else:
             resource_name = name + str(number)
         if isinstance(rt, int):
-            obj = Signal(rt, name_override=resource_name)
+            obj = Signal(resource_name, rt)
         else:
             obj = Record(rt, name=resource_name)
             for name, inverted in ri:
@@ -12359,8 +12256,8 @@ class ECP5PLL(Module):
     vco_freq_range  = (  400e6,  800e6)
 
     def __init__(self):
-        self.reset      = Signal()
-        self.locked     = Signal()
+        self.reset      = Signal("reset")
+        self.locked     = Signal("locked")
         self.clkin_freq = None
         self.vcxo_freq  = None
         self.nclkouts   = 0
@@ -12372,7 +12269,7 @@ class ECP5PLL(Module):
         (clki_freq_min, clki_freq_max) = self.clki_freq_range
         assert freq >= clki_freq_min
         assert freq <= clki_freq_max
-        self.clkin = Signal()
+        self.clkin = Signal("clkin")
         if isinstance(clkin, (Signal, ClockSignal)):
             self.comb += self.clkin.eq(clkin)
         else:
@@ -12384,7 +12281,7 @@ class ECP5PLL(Module):
         assert freq >= clko_freq_min
         assert freq <= clko_freq_max
         assert self.nclkouts < self.nclkouts_max
-        clkout = Signal()
+        clkout = Signal("clkout")
         self.clkouts[self.nclkouts] = (clkout, freq, phase, margin)
         self.comb += cd.clk.eq(clkout)
         self.nclkouts += 1
@@ -12420,7 +12317,7 @@ class ECP5PLL(Module):
 
     def do_finalize(self):
         config = self.compute_config()
-        clkfb  = Signal()
+        clkfb  = Signal("clkfb")
         self.params.update(
             attr=[
                 ("FREQUENCY_PIN_CLKI",     str(self.clkin_freq/1e6)),
@@ -12456,23 +12353,23 @@ class CRG(Module):
         self.clock_domains.cd_sys2x    = ClockDomain("cd_sys2x")
         self.clock_domains.cd_sys2x_i  = ClockDomain("cd_sys2x_i", reset_less=True)
 
-        self.stop  = Signal()
-        self.reset = Signal()
+        self.stop  = Signal("stop")
+        self.reset = Signal("reset")
 
         clk48 = platform.request("clk48")
         rst_n = platform.request("usr_btn")
 
-        por_count = Signal(16, reset=2**16-1)
-        por_done  = Signal()
+        por_count = Signal("por_count", 16, reset=2**16-1)
+        por_done  = Signal("por_done")
         self.comb += self.cd_por.clk.eq(clk48)
         self.comb += por_done.eq(por_count == 0)
         self.sync.por += If(~por_done, por_count.eq(por_count - 1))
 
-        sys2x_clk_ecsout = Signal()
+        sys2x_clk_ecsout = Signal("sys2x_clk_ecsout")
 
         self.submodules.pll = pll = ECP5PLL()
         pll.register_clkin(clk48, 48e6)
-        pll.create_clkout(self.cd_sys2x_i, 2*sys_clk_freq)
+        pll.create_clkout(self.cd_sys2x_i, 2 * sys_clk_freq)
         pll.create_clkout(self.cd_init, 24e6)
 
         self.specials += [
@@ -12555,7 +12452,7 @@ class Timer(Module, AutoCSR):
         self.ev.zero       = EventSourceProcess()
         self.ev.finalize()
 
-        value = Signal(width)
+        value = Signal("value", width)
         self.sync += [
             If(self._en.storage,
                 If(value == 0,
@@ -12889,7 +12786,7 @@ class Waltraud(Module):
 
         # Add Memory regions
         for name, memory, mapaddr, mmap in self.csr_bankarray.srams:
-            self.csr.add_region(name + "_" + memory.name_override, SoCCSRRegion(
+            self.csr.add_region(name + "_" + memory.name, SoCCSRRegion(
                 origin  = (self.bus.regions["csr"].origin + self.csr.paging*mapaddr),
                 busword = self.csr.data_width,
                 obj     = memory,
