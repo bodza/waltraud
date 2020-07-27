@@ -22,13 +22,10 @@ def flat_iteration(l):
         else:
             yield element
 
-def xdir(obj, return_values=False):
+def xdir(obj):
     for attr in dir(obj):
         if attr[:2] != "__" and attr[-2:] != "__":
-            if return_values:
-                yield attr, getattr(obj, attr)
-            else:
-                yield attr
+            yield attr, getattr(obj, attr)
 
 def gcd_multiple(numbers):
     l = len(numbers)
@@ -56,40 +53,27 @@ def bits_for(n, require_sign_bit=False):
         r += 1
     return r
 
-def _bitwise_binary_bits_sign(a, b):
-    if not a[1] and not b[1]:
-        # both operands unsigned
-        return max(a[0], b[0]), False
-    elif a[1] and b[1]:
-        # both operands signed
-        return max(a[0], b[0]), True
-    elif not a[1] and b[1]:
-        # first operand unsigned (add sign bit), second operand signed
-        return max(a[0] + 1, b[0]), True
-    else:
-        # first signed, second operand unsigned (add sign bit)
-        return max(a[0], b[0] + 1), True
-
 def value_bits_sign(v):
-    """Bit length and signedness of a value.
-
-    Parameters
-    ----------
-    v : Value
-
-    Returns
-    -------
-    int, bool
-        Number of bits required to store `v` or available in `v`, followed by
-        whether `v` has a sign bit (included in the bit count).
-
-    Examples
-    --------
-    >>> value_bits_sign(Signal("...", 8))
-    8, False
-    >>> value_bits_sign(Constant(0xaa))
-    8, False
     """
+    Bit length and signedness of a value.
+
+    int, bool
+        Number of bits required to store `v` or available in `v`, followed by whether `v` has a sign bit (included in the bit count).
+    """
+    def _bitwise_binary_bits_sign(a, b):
+        if not a[1] and not b[1]:
+            # both operands unsigned
+            return max(a[0], b[0]), False
+        elif a[1] and b[1]:
+            # both operands signed
+            return max(a[0], b[0]), True
+        elif not a[1] and b[1]:
+            # first operand unsigned (add sign bit), second operand signed
+            return max(a[0] + 1, b[0]), True
+        else:
+            # first signed, second operand unsigned (add sign bit)
+            return max(a[0], b[0] + 1), True
+
     if isinstance(v, (Constant, Signal)):
         return v.nbits, v.signed
     elif isinstance(v, (ClockSignal, ResetSignal)):
@@ -144,7 +128,7 @@ def value_bits_sign(v):
     elif isinstance(v, Cat):
         return sum(value_bits_sign(sv)[0] for sv in v.l), False
     elif isinstance(v, Replicate):
-        return (value_bits_sign(v.v)[0])*v.n, False
+        return (value_bits_sign(v.v)[0]) * v.n, False
     elif isinstance(v, _ArrayProxy):
         bsc = list(map(value_bits_sign, v.choices))
         return max(bs[0] for bs in bsc), any(bs[1] for bs in bsc)
@@ -152,17 +136,20 @@ def value_bits_sign(v):
         raise TypeError("Can not calculate bit length of {} {}".format(type(v), v))
 
 class DUID:
-    """Deterministic Unique IDentifier"""
+    """
+    Deterministic Unique IDentifier
+    """
     __next_uid = 0
     def __init__(self):
         self.duid = DUID.__next_uid
         DUID.__next_uid += 1
 
 class _Value(DUID):
-    """Base class for operands
+    """
+    Base class for operands
 
     Instances of `_Value` or its subclasses can be operands to arithmetic, comparison, bitwise, and logic operators.
-    They can be assigned (:meth:`eq`) or indexed/sliced (using the usual Python indexing and slicing notation).
+    They can be assigned (`eq`) or indexed/sliced (using the usual Python indexing and slicing notation).
 
     Values created from integers have the minimum bit width to necessary to represent the integer.
     """
@@ -178,56 +165,34 @@ class _Value(DUID):
                 return False
         raise TypeError("Attempted to convert Eigen value to boolean")
 
-    def __invert__(self):
-        return _Operator("~", [self])
-    def __neg__(self):
-        return _Operator("-", [self])
+    def __invert__(self):       return _Operator("~", [self])
+    def __neg__(self):          return _Operator("-", [self])
 
-    def __add__(self, other):
-        return _Operator("+", [self, other])
-    def __radd__(self, other):
-        return _Operator("+", [other, self])
-    def __sub__(self, other):
-        return _Operator("-", [self, other])
-    def __rsub__(self, other):
-        return _Operator("-", [other, self])
-    def __mul__(self, other):
-        return _Operator("*", [self, other])
-    def __rmul__(self, other):
-        return _Operator("*", [other, self])
-    def __lshift__(self, other):
-        return _Operator("<<<", [self, other])
-    def __rlshift__(self, other):
-        return _Operator("<<<", [other, self])
-    def __rshift__(self, other):
-        return _Operator(">>>", [self, other])
-    def __rrshift__(self, other):
-        return _Operator(">>>", [other, self])
-    def __and__(self, other):
-        return _Operator("&", [self, other])
-    def __rand__(self, other):
-        return _Operator("&", [other, self])
-    def __xor__(self, other):
-        return _Operator("^", [self, other])
-    def __rxor__(self, other):
-        return _Operator("^", [other, self])
-    def __or__(self, other):
-        return _Operator("|", [self, other])
-    def __ror__(self, other):
-        return _Operator("|", [other, self])
+    def __add__(self, other):   return _Operator("+", [self, other])
+    def __radd__(self, other):  return _Operator("+", [other, self])
+    def __sub__(self, other):   return _Operator("-", [self, other])
+    def __rsub__(self, other):  return _Operator("-", [other, self])
+    def __mul__(self, other):   return _Operator("*", [self, other])
+    def __rmul__(self, other):  return _Operator("*", [other, self])
 
-    def __lt__(self, other):
-        return _Operator("<", [self, other])
-    def __le__(self, other):
-        return _Operator("<=", [self, other])
-    def __eq__(self, other):
-        return _Operator("==", [self, other])
-    def __ne__(self, other):
-        return _Operator("!=", [self, other])
-    def __gt__(self, other):
-        return _Operator(">", [self, other])
-    def __ge__(self, other):
-        return _Operator(">=", [self, other])
+    def __lshift__(self, other): return _Operator("<<<", [self, other])
+    def __rlshift__(self, other): return _Operator("<<<", [other, self])
+    def __rshift__(self, other): return _Operator(">>>", [self, other])
+    def __rrshift__(self, other): return _Operator(">>>", [other, self])
+
+    def __and__(self, other):   return _Operator("&", [self, other])
+    def __rand__(self, other):  return _Operator("&", [other, self])
+    def __xor__(self, other):   return _Operator("^", [self, other])
+    def __rxor__(self, other):  return _Operator("^", [other, self])
+    def __or__(self, other):    return _Operator("|", [self, other])
+    def __ror__(self, other):   return _Operator("|", [other, self])
+
+    def __lt__(self, other):    return _Operator("<", [self, other])
+    def __le__(self, other):    return _Operator("<=", [self, other])
+    def __eq__(self, other):    return _Operator("==", [self, other])
+    def __ne__(self, other):    return _Operator("!=", [self, other])
+    def __gt__(self, other):    return _Operator(">", [self, other])
+    def __ge__(self, other):    return _Operator(">=", [self, other])
 
     def __len__(self):
         return value_bits_sign(self)[0]
@@ -249,45 +214,30 @@ class _Value(DUID):
             raise TypeError("Cannot use type {} ({}) as key".format(type(key), repr(key)))
 
     def eq(self, r):
-        """Assignment
+        """
+        Assignment
 
-        Parameters
-        ----------
-        r : _Value, in
-            Value to be assigned.
-
-        Returns
-        -------
         _Assign
-            Assignment statement that can be used in combinatorial or
-            synchronous context.
+            Assignment statement that can be used in combinatorial or synchronous context.
         """
         return _Assign(self, r)
 
     def part(self, offset, width):
-        """Indexed part-select
-        Selects a constant width but variable offset part of a ``_Value``
+        """
+        Indexed part-select: selects a constant width but variable offset part of a ``_Value``
 
-        Parameters
-        ----------
-        offset : _Value, in
-            start point of the selected bits
-        width : Constant, in
-            number of selected bits
-
-        Returns
-        -------
         _Part
             Selected part of the ``_Value``
         """
-        offset = wrap(offset)
-        return _Part(self, offset, width)
+        return _Part(self, wrap(offset), width)
 
     def __hash__(self):
         raise TypeError("unhashable type: '{}'".format(type(self).__name__))
 
 def wrap(value):
-    """Ensures that the passed object is a Eigen value. Booleans and integers are automatically wrapped into ``Constant``."""
+    """
+    Ensures that the passed object is a Eigen value. Booleans and integers are automatically wrapped into ``Constant``.
+    """
     if isinstance(value, (bool, int)):
         value = Constant(value)
     if not isinstance(value, _Value):
@@ -321,26 +271,19 @@ class _Part(_Value):
         self.width = width
 
 class Cat(_Value):
-    """Concatenate values
+    """
+    Concatenate values
 
-    Form a compound `_Value` from several smaller ones by concatenation.
-    The first argument occupies the lower bits of the result.
-    The return value can be used on either side of an assignment, that
-    is, the concatenated value can be used as an argument on the RHS or
-    as a target on the LHS. If it is used on the LHS, it must solely
-    consist of `Signal` s, slices of `Signal` s, and other concatenations
-    meeting these properties. The bit length of the return value is the sum of
-    the bit lengths of the arguments::
+    Form a compound `_Value` from several smaller ones by concatenation. The first argument occupies the lower bits of the result.
+    The return value can be used on either side of an assignment, that is, the concatenated value can be used as an argument on the RHS or
+    as a target on the LHS. If it is used on the LHS, it must solely consist of `Signal` s, slices of `Signal` s, and other concatenations
+    meeting these properties. The bit length of the return value is the sum of the bit lengths of the arguments:
 
         len(Cat(args)) == sum(len(arg) for arg in args)
 
-    Parameters
-    ----------
     *args : _Values or iterables of _Values, inout
         `_Value` s to be concatenated.
 
-    Returns
-    -------
     Cat, inout
         Resulting `_Value` obtained by concatentation.
     """
@@ -349,22 +292,13 @@ class Cat(_Value):
         self.l = [wrap(v) for v in flat_iteration(args)]
 
 class Replicate(_Value):
-    """Replicate a value
+    """
+    Replicate a value
 
-    An input value is replicated (repeated) several times
-    to be used on the RHS of assignments::
+    An input value is replicated (repeated) several times to be used on the RHS of assignments:
 
-        len(Replicate(s, n)) == len(s)*n
+        len(Replicate(s, n)) == len(s) * n
 
-    Parameters
-    ----------
-    v : _Value, in
-        Input value to be replicated.
-    n : int
-        Number of replications.
-
-    Returns
-    -------
     Replicate, out
         Replicated value.
     """
@@ -376,16 +310,13 @@ class Replicate(_Value):
         self.n = n
 
 class Constant(_Value):
-    """A constant, HDL-literal integer `_Value`
+    """
+    A constant, HDL-literal integer `_Value`
 
-    Parameters
-    ----------
     value : int
     bits_sign : int or tuple or None
-        Either an integer `bits` or a tuple `(bits, signed)`
-        specifying the number of bits in this `Constant` and whether it is
-        signed (can represent negative values). `bits_sign` defaults
-        to the minimum width and signedness of `value`.
+        Either an integer `bits` or a tuple `(bits, signed)` specifying the number of bits in this `Constant` and whether
+        it is signed (can represent negative values). `bits_sign` defaults to the minimum width and signedness of `value`.
     """
     def __init__(self, value, bits_sign=None):
         _Value.__init__(self)
@@ -403,55 +334,39 @@ class Constant(_Value):
         return self.value
 
 class Signal(_Value):
-    """A `_Value` that can change
+    """
+    A `_Value` that can change
 
-    The `Signal` object represents a value that is expected to change
-    in the circuit. It does exactly what Verilog's `wire` and
-    `reg` and VHDL's `signal` do.
+    The `Signal` object represents a value that is expected to change in the circuit.
+    It does exactly what Verilog's `wire` and `reg` and VHDL's `signal` do.
 
-    A `Signal` can be indexed to access a subset of its bits. Negative
-    indices (`signal[-1]`) and the extended Python slicing notation
-    (`signal[start:stop:step]`) are supported.
-    The indices 0 and -1 are the least and most significant bits
-    respectively.
+    A `Signal` can be indexed to access a subset of its bits.
+    Negative indices (`signal[-1]`) and the extended Python slicing notation (`signal[start:stop:step]`) are supported.
+    The indices 0 and -1 are the least and most significant bits respectively.
 
-    Parameters
-    ----------
     bits_sign : int or tuple
-        Either an integer `bits` or a tuple `(bits, signed)`
-        specifying the number of bits in this `Signal` and whether it is
-        signed (can represent negative values). `signed` defaults to
-        `False`.
+        Either an integer `bits` or a tuple `(bits, signed)` specifying the number of bits in this `Signal` and whether
+        it is signed (can represent negative values). `signed` defaults to `False`.
     name : str or None
-        Name hint for this signal. If `None` (default) the name is
-        inferred from the variable name this `Signal` is assigned to.
-        Name collisions are automatically resolved by prepending
-        names of objects that contain this `Signal` and by
-        appending integer sequences.
+        Name hint for this signal.
+        Name collisions are automatically resolved by appending integer sequences.
     variable : bool
         Deprecated.
     reset : int
         Reset (synchronous) or default (combinatorial) value.
-        When this `Signal` is assigned to in synchronous context and the
-        corresponding clock domain is reset, the `Signal` assumes the
-        given value. When this `Signal` is unassigned in combinatorial
-        context (due to conditional assignments not being taken),
-        the `Signal` assumes its `reset` value. Defaults to 0.
+        When this `Signal` is assigned to in synchronous context and the corresponding clock domain is reset,
+        the `Signal` assumes the given value. When this `Signal` is unassigned in combinatorial context
+        (due to conditional assignments not being taken), the `Signal` assumes its `reset` value. Defaults to 0.
     reset_less : bool
-        If `True`, do not generate reset logic for this `Signal` in
-        synchronous statements. The `reset` value is only used as a
-        combinatorial default or as the initial value. Defaults to `False`.
-    name_override : str or None
-        Do not use the inferred name but the given one.
+        If `True`, do not generate reset logic for this `Signal` in synchronous statements.
+        The `reset` value is only used as a combinatorial default or as the initial value. Defaults to `False`.
     min : int or None
     max : int or None
-        If `bits_sign` is `None`, the signal bit width and signedness are
-        determined by the integer range given by `min` (inclusive,
-        defaults to 0) and `max` (exclusive, defaults to 2).
+        If `bits_sign` is `None`, the signal bit width and signedness are determined by the integer range given
+        by `min` (inclusive, defaults to 0) and `max` (exclusive, defaults to 2).
     related : Signal or None
     attr : set of synthesis attributes
     """
-
     def __init__(self, name, bits_sign=None, variable=False, reset=0, reset_less=False, min=None, max=None, related=None, attr=None):
         _Value.__init__(self)
 
@@ -496,13 +411,7 @@ class Signal(_Value):
 
     @classmethod
     def like(cls, other, **kwargs):
-        """Create Signal based on another.
-
-        Parameters
-        ----------
-        other : _Value
-            Object to base this Signal on.
-        """
+        # Create Signal based on another
         kw = dict(bits_sign=value_bits_sign(other))
         if isinstance(other, cls):
             kw.update(variable=other.variable, reset=other.reset.value, reset_less=other.reset_less, related=other.related, attr=set(other.attr))
@@ -513,15 +422,8 @@ class Signal(_Value):
         return self.duid
 
 class ClockSignal(_Value):
-    """Clock signal for a given clock domain
-
-    `ClockSignal` s for a given clock domain can be retrieved multiple
-    times. They all ultimately refer to the same signal.
-
-    Parameters
-    ----------
-    cd : str
-        Clock domain to obtain a clock signal for. Defaults to `"sys"`.
+    """
+    Clock signal for a given clock domain
     """
     def __init__(self, cd="sys"):
         _Value.__init__(self)
@@ -530,18 +432,11 @@ class ClockSignal(_Value):
         self.cd = cd
 
 class ResetSignal(_Value):
-    """Reset signal for a given clock domain
+    """
+    Reset signal for a given clock domain
 
-    `ResetSignal` s for a given clock domain can be retrieved multiple
-    times. They all ultimately refer to the same signal.
-
-    Parameters
-    ----------
-    cd : str
-        Clock domain to obtain a reset signal for. Defaults to `"sys"`.
     allow_reset_less : bool
-        If the clock domain is resetless, return 0 instead of reporting an
-        error.
+        If the clock domain is resetless, return 0 instead of reporting an error.
     """
     def __init__(self, cd="sys", allow_reset_less=False):
         _Value.__init__(self)
@@ -567,28 +462,13 @@ def _check_statement(s):
         return isinstance(s, _Statement)
 
 class If(_Statement):
-    """Conditional execution of statements
+    """
+    Conditional execution of statements
 
-    Parameters
-    ----------
     cond : _Value(1), in
         Condition
     *t : Statements
         Statements to execute if `cond` is asserted.
-
-    Examples
-    --------
-    >>> a = Signal("...")
-    >>> b = Signal("...")
-    >>> c = Signal("...")
-    >>> d = Signal("...")
-    >>> If(a,
-    ...     b.eq(1)
-    ... ).Elif(c,
-    ...     b.eq(0)
-    ... ).Else(
-    ...     b.eq(d)
-    ... )
     """
     def __init__(self, cond, *t):
         if not _check_statement(t):
@@ -598,29 +478,12 @@ class If(_Statement):
         self.f = []
 
     def Else(self, *f):
-        """Add an `else` conditional block
-
-        Parameters
-        ----------
-        *f : Statements
-            Statements to execute if all previous conditions fail.
-        """
         if not _check_statement(f):
             raise TypeError("Not all test body objects are Eigen statements")
         _insert_else(self, list(f))
         return self
 
     def Elif(self, cond, *t):
-        """Add an `else if` conditional block
-
-        Parameters
-        ----------
-        cond : _Value(1), in
-            Condition
-        *t : Statements
-            Statements to execute if previous conditions fail and `cond`
-            is asserted.
-        """
         _insert_else(self, [If(cond, *t)])
         return self
 
@@ -633,28 +496,15 @@ def _insert_else(obj, clause):
     o.f = clause
 
 class Case(_Statement):
-    """Case/Switch statement
+    """
+    Case/Switch statement
 
-    Parameters
-    ----------
     test : _Value, in
         Selector value used to decide which block to execute
     cases : dict
-        Dictionary of cases. The keys are numeric constants to compare
-        with `test`. The values are statements to be executed the
-        corresponding key matches `test`. The dictionary may contain a
-        string key `"default"` to mark a fall-through case that is
-        executed if no other key matches.
-
-    Examples
-    --------
-    >>> a = Signal("...")
-    >>> b = Signal("...")
-    >>> Case(a, {
-    ...     0:         b.eq(1),
-    ...     1:         b.eq(0),
-    ...     "default": b.eq(0),
-    ... })
+        Dictionary of cases. The keys are numeric constants to compare with `test`.
+        The values are statements to be executed the corresponding key matches `test`.
+        The dictionary may contain a string key `"default"` to mark a fall-through case that is executed if no other key matches.
     """
     def __init__(self, test, cases):
         self.test = wrap(test)
@@ -671,12 +521,11 @@ class Case(_Statement):
             self.cases[k] = v
 
     def makedefault(self, key=None):
-        """Mark a key as the default case
+        """
+        Mark a key as the default case
 
         Deletes/substitutes any previously existing default case.
 
-        Parameters
-        ----------
         key : int, Constant or None
             Key to use as default case if no other key matches.
             By default, the largest key is the default key.
@@ -711,26 +560,21 @@ class _ArrayProxy(_Value):
         return _ArrayProxy([choice.__getitem__(key) for choice in self.choices], self.key)
 
 class Array(list):
-    """Addressable multiplexer
+    """
+    Addressable multiplexer
 
-    An array is created from an iterable of values and indexed using the
-    usual Python simple indexing notation (no negative indices or slices).
+    An array is created from an iterable of values and indexed using the usual Python simple indexing notation (no negative indices or slices).
     It can be indexed by numeric constants, `_Value` s, or `Signal` s.
 
-    The result of indexing the array is a proxy for the entry at the
-    given index that can be used on either RHS or LHS of assignments.
+    The result of indexing the array is a proxy for the entry at the given index that can be used on either RHS or LHS of assignments.
 
     An array can be indexed multiple times.
 
     Multidimensional arrays are supported by packing inner arrays into outer arrays.
 
-    Parameters
-    ----------
     values : iterable of ints, _Values, Signals
         Entries of the array. Each entry can be a numeric constant, a `Signal` or a `Record`.
 
-    Examples
-    --------
     >>> a = Array(range(10))
     >>> b = Signal("...", max=10)
     >>> c = Signal("...", max=10)
@@ -747,24 +591,17 @@ class Array(list):
 # clock domains
 
 class ClockDomain:
-    """Synchronous domain
+    """
+    Synchronous domain
 
-    Parameters
-    ----------
     name : str or None
-        Domain name. If None (the default) the name is inferred from the
-        variable name this `ClockDomain` is assigned to (stripping any
-        `"cd_"` prefix).
+        Domain name.
     reset_less : bool
-        The domain does not use a reset signal. Registers within this
-        domain are still all initialized to their reset state once, e.g.
-        through Verilog `"initial"` statements.
+        The domain does not use a reset signal. Registers within this domain are still all initialized to their reset state once,
+        e.g. through Verilog `"initial"` statements.
 
-    Attributes
-    ----------
     clk : Signal, inout
-        The clock for this domain. Can be driven or used to drive other
-        signals (preferably in combinatorial context).
+        The clock for this domain. Can be driven or used to drive other signals (preferably in combinatorial context).
     rst : Signal or None, inout
         Reset signal for this domain. Can be driven or used to drive.
     """
@@ -783,13 +620,6 @@ class ClockDomain:
             self.rst = Signal(self.name + "_rst")
 
     def rename(self, new_name):
-        """Rename the clock domain
-
-        Parameters
-        ----------
-        new_name : str
-            New name
-        """
         self.name = new_name
         self.clk.name = new_name + "_clk"
         if self.rst is not None:
@@ -864,50 +694,27 @@ class _Fragment:
 
 class NodeVisitor:
     def visit(self, node):
-        if isinstance(node, Constant):
-            self.visit_Constant(node)
-        elif isinstance(node, Signal):
-            self.visit_Signal(node)
-        elif isinstance(node, ClockSignal):
-            self.visit_ClockSignal(node)
-        elif isinstance(node, ResetSignal):
-            self.visit_ResetSignal(node)
-        elif isinstance(node, _Operator):
-            self.visit_Operator(node)
-        elif isinstance(node, _Slice):
-            self.visit_Slice(node)
-        elif isinstance(node, Cat):
-            self.visit_Cat(node)
-        elif isinstance(node, Replicate):
-            self.visit_Replicate(node)
-        elif isinstance(node, _Assign):
-            self.visit_Assign(node)
-        elif isinstance(node, If):
-            self.visit_If(node)
-        elif isinstance(node, Case):
-            self.visit_Case(node)
-        elif isinstance(node, _Fragment):
-            self.visit_Fragment(node)
-        elif isinstance(node, (list, tuple)):
-            self.visit_statements(node)
-        elif isinstance(node, dict):
-            self.visit_clock_domains(node)
-        elif isinstance(node, _ArrayProxy):
-            self.visit_ArrayProxy(node)
-        else:
-            self.visit_unknown(node)
+        if isinstance(node, Constant):      self.visit_Constant(node)
+        elif isinstance(node, Signal):      self.visit_Signal(node)
+        elif isinstance(node, ClockSignal): self.visit_ClockSignal(node)
+        elif isinstance(node, ResetSignal): self.visit_ResetSignal(node)
+        elif isinstance(node, _Operator):   self.visit_Operator(node)
+        elif isinstance(node, _Slice):      self.visit_Slice(node)
+        elif isinstance(node, Cat):         self.visit_Cat(node)
+        elif isinstance(node, Replicate):   self.visit_Replicate(node)
+        elif isinstance(node, _Assign):     self.visit_Assign(node)
+        elif isinstance(node, If):          self.visit_If(node)
+        elif isinstance(node, Case):        self.visit_Case(node)
+        elif isinstance(node, _Fragment):   self.visit_Fragment(node)
+        elif isinstance(node, (list, tuple)): self.visit_statements(node)
+        elif isinstance(node, dict):        self.visit_clock_domains(node)
+        elif isinstance(node, _ArrayProxy): self.visit_ArrayProxy(node)
+        else:                               self.visit_unknown(node)
 
-    def visit_Constant(self, node):
-        pass
-
-    def visit_Signal(self, node):
-        pass
-
-    def visit_ClockSignal(self, node):
-        pass
-
-    def visit_ResetSignal(self, node):
-        pass
+    def visit_Constant(self, node):    pass
+    def visit_Signal(self, node):      pass
+    def visit_ClockSignal(self, node): pass
+    def visit_ResetSignal(self, node): pass
 
     def visit_Operator(self, node):
         for o in node.operands:
@@ -969,52 +776,28 @@ class NodeVisitor:
 
 class NodeTransformer:
     def visit(self, node):
-        if isinstance(node, Constant):
-            return self.visit_Constant(node)
-        elif isinstance(node, Signal):
-            return self.visit_Signal(node)
-        elif isinstance(node, ClockSignal):
-            return self.visit_ClockSignal(node)
-        elif isinstance(node, ResetSignal):
-            return self.visit_ResetSignal(node)
-        elif isinstance(node, _Operator):
-            return self.visit_Operator(node)
-        elif isinstance(node, _Slice):
-            return self.visit_Slice(node)
-        elif isinstance(node, _Part):
-            return self.visit_Part(node)
-        elif isinstance(node, Cat):
-            return self.visit_Cat(node)
-        elif isinstance(node, Replicate):
-            return self.visit_Replicate(node)
-        elif isinstance(node, _Assign):
-            return self.visit_Assign(node)
-        elif isinstance(node, If):
-            return self.visit_If(node)
-        elif isinstance(node, Case):
-            return self.visit_Case(node)
-        elif isinstance(node, _Fragment):
-            return self.visit_Fragment(node)
-        elif isinstance(node, (list, tuple)):
-            return self.visit_statements(node)
-        elif isinstance(node, dict):
-            return self.visit_clock_domains(node)
-        elif isinstance(node, _ArrayProxy):
-            return self.visit_ArrayProxy(node)
-        else:
-            return self.visit_unknown(node)
+        if isinstance(node, Constant):      return self.visit_Constant(node)
+        elif isinstance(node, Signal):      return self.visit_Signal(node)
+        elif isinstance(node, ClockSignal): return self.visit_ClockSignal(node)
+        elif isinstance(node, ResetSignal): return self.visit_ResetSignal(node)
+        elif isinstance(node, _Operator):   return self.visit_Operator(node)
+        elif isinstance(node, _Slice):      return self.visit_Slice(node)
+        elif isinstance(node, _Part):       return self.visit_Part(node)
+        elif isinstance(node, Cat):         return self.visit_Cat(node)
+        elif isinstance(node, Replicate):   return self.visit_Replicate(node)
+        elif isinstance(node, _Assign):     return self.visit_Assign(node)
+        elif isinstance(node, If):          return self.visit_If(node)
+        elif isinstance(node, Case):        return self.visit_Case(node)
+        elif isinstance(node, _Fragment):   return self.visit_Fragment(node)
+        elif isinstance(node, (list, tuple)): return self.visit_statements(node)
+        elif isinstance(node, dict):        return self.visit_clock_domains(node)
+        elif isinstance(node, _ArrayProxy): return self.visit_ArrayProxy(node)
+        else:                               return self.visit_unknown(node)
 
-    def visit_Constant(self, node):
-        return node
-
-    def visit_Signal(self, node):
-        return node
-
-    def visit_ClockSignal(self, node):
-        return node
-
-    def visit_ResetSignal(self, node):
-        return node
+    def visit_Constant(self, node):    return node
+    def visit_Signal(self, node):      return node
+    def visit_ClockSignal(self, node): return node
+    def visit_ResetSignal(self, node): return node
 
     def visit_Operator(self, node):
         return _Operator(node.op, [self.visit(o) for o in node.operands])
@@ -1311,8 +1094,7 @@ class _ClockDomainRenamer(NodeVisitor):
             node.cd = self.new
 
 def rename_clock_domain_expr(f, old, new):
-    cdr = _ClockDomainRenamer(old, new)
-    cdr.visit(f)
+    _ClockDomainRenamer(old, new).visit(f)
 
 def rename_clock_domain(f, old, new):
     rename_clock_domain_expr(f, old, new)
@@ -1442,16 +1224,11 @@ class Module:
         return self._fragment
 
     def __getattr__(self, name):
-        if name == "comb":
-            return _ModuleComb(self)
-        elif name == "sync":
-            return _ModuleSync(self)
-        elif name == "specials":
-            return _ModuleSpecials(self)
-        elif name == "submodules":
-            return _ModuleSubmodules(self)
-        elif name == "clock_domains":
-            return _ModuleClockDomains(self)
+        if name == "comb":            return _ModuleComb(self)
+        elif name == "sync":          return _ModuleSync(self)
+        elif name == "specials":      return _ModuleSpecials(self)
+        elif name == "submodules":    return _ModuleSubmodules(self)
+        elif name == "clock_domains": return _ModuleClockDomains(self)
 
         # hack to have initialized regular attributes without using __init__ (which would require derived classes to call it)
         elif name == "finalized":
@@ -1895,9 +1672,9 @@ class Memory(Special):
                 return ns.get_name(e)
             else:
                 return _printexpr(ns, e)[0]
-        adrbits = bits_for(memory.depth-1)
+        adrbits = bits_for(memory.depth - 1)
 
-        r += "reg [" + str(memory.width-1) + ":0] " + gn(memory) + "[0:" + str(memory.depth-1) + "];\n"
+        r += "reg [" + str(memory.width - 1) + ":0] " + gn(memory) + "[0:" + str(memory.depth - 1) + "];\n"
 
         adr_regs = {}
         data_regs = {}
@@ -2088,17 +1865,14 @@ class WaitTimer(Module):
             ).Else(count.eq(count.reset))
 
 class OneHotEncoder(Module):
-    """Encode one-hot to binary
+    """
+    Encode one-hot to binary
 
     If `n` is low, the `o` th bit in `i` is asserted, else none or multiple bits are asserted.
 
-    Parameters
-    ----------
     width : int
         Bit width of the input
 
-    Attributes
-    ----------
     i : Signal("...", width), in
         One-hot input
     o : Signal("...", max=width), out
@@ -2110,22 +1884,19 @@ class OneHotEncoder(Module):
         self.i = Signal("i", width)  # one-hot
         self.o = Signal("o", max=max(2, width))  # binary
         self.n = Signal("n")  # invalid: none or multiple
-        act = dict((1<<j, self.o.eq(j)) for j in range(width))
+        act = dict((1 << j, self.o.eq(j)) for j in range(width))
         act["default"] = self.n.eq(1)
         self.comb += Case(self.i, act)
 
 class OneHotDecoder(Module):
-    """Decode binary to one-hot
+    """
+    Decode binary to one-hot
 
     If `n` is low, the `i` th bit in `o` is asserted, the others are not, else `o == 0`.
 
-    Parameters
-    ----------
     width : int
         Bit width of the output
 
-    Attributes
-    ----------
     i : Signal("...", max=width), in
         Input binary
     o : Signal("...", width), out
@@ -2137,7 +1908,7 @@ class OneHotDecoder(Module):
         self.i = Signal("i", max=max(2, width))  # binary
         self.n = Signal("n")  # none/invalid
         self.o = Signal("o", width)  # one-hot
-        act = dict((j, self.o.eq(1<<j)) for j in range(width))
+        act = dict((j, self.o.eq(1 << j)) for j in range(width))
         self.comb += Case(self.i, act)
         self.comb += If(self.n, self.o.eq(0))
 
@@ -2192,8 +1963,8 @@ def layout_len(layout):
     return r
 
 class Record:
-    def __init__(self, layout, name=None, **kwargs):
-        self.name = name or "rec"
+    def __init__(self, name, layout):
+        self.name = name
         self.layout = layout
 
         if self.name:
@@ -2202,14 +1973,14 @@ class Record:
             prefix = ""
         for f in self.layout:
             if isinstance(f[1], (int, tuple)):  # cases 1/2
-                if(len(f) == 3):
+                if len(f) == 3:
                     fname, fsize, fdirection = f
                 else:
                     fname, fsize = f
-                finst = Signal(prefix + fname, fsize, **kwargs)
+                finst = Signal(prefix + fname, fsize)
             elif isinstance(f[1], list):  # case 3
                 fname, fsublayout = f
-                finst = Record(fsublayout, prefix + fname, **kwargs)
+                finst = Record(prefix + fname, fsublayout)
             else:
                 raise TypeError
             setattr(self, fname, finst)
@@ -2364,15 +2135,8 @@ class FSM(Module):
     """
     Finite state machine
 
-    Any Python objects can be used as states, e.g. strings.
-
-    Parameters
-    ----------
     reset_state
         Reset state. Defaults to the first added state.
-
-    Examples
-    --------
 
     >>> self.active = Signal("...")
     >>> self.bitno = Signal("...", 3)
@@ -2446,7 +2210,9 @@ class FSM(Module):
             self.state_aliases[name] = target
 
     def ongoing(self, state):
-        """Returns a signal that has the value 1 when the FSM is in the given `state`, and 0 otherwise."""
+        """
+        Returns a signal that has the value 1 when the FSM is in the given `state`, and 0 otherwise.
+        """
         is_ongoing = Signal("is_ongoing")
         self.act(state, is_ongoing.eq(1))
         return is_ongoing
@@ -2563,10 +2329,6 @@ class AsyncResetSynchronizer(Special):
     def lower(dr):
         raise NotImplementedError("Attempted to use a reset synchronizer, but platform does not support them")
 
-"""
-Clock domain crossing module
-"""
-
 class MultiRegImpl(Module):
     def __init__(self, i, o, odomain, n, reset=0):
         self.i = i
@@ -2657,8 +2419,8 @@ class GrayDecoder(Module):
 
         o_comb = Signal("o_comb", width)
         self.comb += o_comb[-1].eq(self.i[-1])
-        for i in reversed(range(width-1)):
-            self.comb += o_comb[i].eq(o_comb[i+1] ^ self.i[i])
+        for i in reversed(range(width - 1)):
+            self.comb += o_comb[i].eq(o_comb[i + 1] ^ self.i[i])
         self.sync += self.o.eq(o_comb)
 
 def _inc(signal, modulo):
@@ -2673,18 +2435,9 @@ def _inc(signal, modulo):
 
 class _FIFOInterface:
     """
-    Data written to the input interface (`din`, `we`, `writable`) is buffered and can be read at the output interface
-    (`dout`, `re`, `readable`). The data entry written first to the input also appears first on the output.
+    Data written to the input interface (`din`, `we`, `writable`) is buffered and can be read at the output interface (`dout`, `re`, `readable`).
+    The data entry written first to the input also appears first on the output.
 
-    Parameters
-    ----------
-    width : int
-        Bit width for the data.
-    depth : int
-        Depth of the FIFO.
-
-    Attributes
-    ----------
     din : in, width
         Input data
     writable : out
@@ -2710,12 +2463,12 @@ class _FIFOInterface:
         self.depth = depth
 
 class _SyncFIFO(Module, _FIFOInterface):
-    """Synchronous FIFO (first in, first out)
+    """
+    Synchronous FIFO (first in, first out)
 
     Read and write interfaces are accessed from the same clock domain.
-    If different clock domains are needed, use :class:`_AsyncFIFO`.
+    If different clock domains are needed, use `_AsyncFIFO`.
 
-    {interface}
     level : out
         Number of unread entries.
     replace : in
@@ -2726,7 +2479,7 @@ class _SyncFIFO(Module, _FIFOInterface):
     def __init__(self, width, depth, fwft=True):
         _FIFOInterface.__init__(self, width, depth)
 
-        self.level = Signal("level", max=depth+1)
+        self.level = Signal("level", max=depth + 1)
         self.replace = Signal("replace")
 
         produce = Signal("produce", max=depth)
@@ -2738,7 +2491,7 @@ class _SyncFIFO(Module, _FIFOInterface):
         self.specials += wrport
         self.comb += [
             If(self.replace,
-                wrport.adr.eq(produce-1)
+                wrport.adr.eq(produce - 1)
             ).Else(
                 wrport.adr.eq(produce)
             ),
@@ -2772,9 +2525,10 @@ class _SyncFIFO(Module, _FIFOInterface):
         ]
 
 class _SyncFIFOBuffered(Module, _FIFOInterface):
-    """Has an interface compatible with _SyncFIFO with fwft=True,
-    but does not use asynchronous RAM reads that are not compatible
-    with block RAMs. Increases latency by one cycle."""
+    """
+    Has an interface compatible with _SyncFIFO with fwft=True, but does not use asynchronous RAM reads that are not compatible with block RAMs.
+    Increases latency by one cycle.
+    """
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
         self.submodules.fifo = fifo = _SyncFIFO(width, depth, False)
@@ -2783,7 +2537,7 @@ class _SyncFIFOBuffered(Module, _FIFOInterface):
         self.din = fifo.din
         self.we = fifo.we
         self.dout = fifo.dout
-        self.level = Signal("level", max=depth+2)
+        self.level = Signal("level", max=depth + 2)
 
         self.comb += fifo.re.eq(fifo.readable & (~self.readable | self.re))
         self.sync += \
@@ -2795,31 +2549,29 @@ class _SyncFIFOBuffered(Module, _FIFOInterface):
         self.comb += self.level.eq(fifo.level + self.readable)
 
 class _AsyncFIFO(Module, _FIFOInterface):
-    """Asynchronous FIFO (first in, first out)
+    """
+    Asynchronous FIFO (first in, first out)
 
-    Read and write interfaces are accessed from different clock domains,
-    named `read` and `write`. Use `ClockDomainsRenamer` to rename to
-    other names.
-
-    {interface}
+    Read and write interfaces are accessed from different clock domains, named `read` and `write`.
+    Use `ClockDomainsRenamer` to rename to other names.
     """
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
 
         depth_bits = log2_int(depth, True)
 
-        produce = ClockDomainsRenamer("write")(GrayCounter(depth_bits+1))
-        consume = ClockDomainsRenamer("read")(GrayCounter(depth_bits+1))
+        produce = ClockDomainsRenamer("write")(GrayCounter(depth_bits + 1))
+        consume = ClockDomainsRenamer("read")(GrayCounter(depth_bits + 1))
         self.submodules += produce, consume
         self.comb += [
             produce.ce.eq(self.writable & self.we),
             consume.ce.eq(self.readable & self.re)
         ]
 
-        produce_rdomain = Signal("produce_rdomain", depth_bits+1)
+        produce_rdomain = Signal("produce_rdomain", depth_bits + 1)
         produce.q.attr.add("no_retiming")
         self.specials += MultiReg(produce.q, produce_rdomain, "read")
-        consume_wdomain = Signal("consume_wdomain", depth_bits+1)
+        consume_wdomain = Signal("consume_wdomain", depth_bits + 1)
         consume.q.attr.add("no_retiming")
         self.specials += MultiReg(consume.q, consume_wdomain, "write")
         if depth_bits == 1:
@@ -2847,7 +2599,10 @@ class _AsyncFIFO(Module, _FIFOInterface):
         ]
 
 class _AsyncFIFOBuffered(Module, _FIFOInterface):
-    """Improves timing when it breaks due to sluggish clock-to-output delay in block RAMs. Increases latency by one cycle."""
+    """
+    Improves timing when it breaks due to sluggish clock-to-output delay in block RAMs.
+    Increases latency by one cycle.
+    """
     def __init__(self, width, depth):
         _FIFOInterface.__init__(self, width, depth)
         self.submodules.fifo = fifo = _AsyncFIFO(width, depth)
@@ -2905,12 +2660,12 @@ class EndpointDescription:
         return full_layout
 
 class Endpoint(Record):
-    def __init__(self, description_or_layout=[], name=None, **kwargs):
+    def __init__(self, name, description_or_layout=[]):
         if isinstance(description_or_layout, EndpointDescription):
             self.description = description_or_layout
         else:
             self.description = EndpointDescription(description_or_layout)
-        Record.__init__(self, self.description.get_full_layout(), name, **kwargs)
+        Record.__init__(self, name, self.description.get_full_layout())
         set_reset_less(self.first)
         set_reset_less(self.last)
         set_reset_less(self.payload)
@@ -2924,8 +2679,8 @@ class Endpoint(Record):
 
 class _FIFOWrapper(Module):
     def __init__(self, fifo_class, layout, depth):
-        self.sink   = sink   = Endpoint(layout)
-        self.source = source = Endpoint(layout)
+        self.sink   = sink   = Endpoint("sink", layout)
+        self.source = source = Endpoint("source", layout)
 
         description = sink.description
         fifo_layout = [
@@ -2936,8 +2691,8 @@ class _FIFOWrapper(Module):
         ]
 
         self.submodules.fifo = fifo = fifo_class(layout_len(fifo_layout), depth)
-        fifo_in  = Record(fifo_layout)
-        fifo_out = Record(fifo_layout)
+        fifo_in  = Record("fifo_in", fifo_layout)
+        fifo_out = Record("fifo_out", fifo_layout)
         self.comb += [
             fifo.din.eq(fifo_in.raw_bits()),
             fifo_out.raw_bits().eq(fifo.dout)
@@ -2974,8 +2729,8 @@ class SyncFIFO(_FIFOWrapper):
             self.depth  = 1
             self.level  = Signal("level")
         elif depth == 0:
-            self.sink   = Endpoint(layout)
-            self.source = Endpoint(layout)
+            self.sink   = Endpoint("sink", layout)
+            self.source = Endpoint("source", layout)
             self.comb += self.sink.connect(self.source)
             self.depth = 0
             self.level = Signal("level")
@@ -2987,8 +2742,8 @@ class AsyncFIFO(_FIFOWrapper):
 
 class _UpConverter(Module):
     def __init__(self, nbits_from, nbits_to, ratio, reverse):
-        self.sink   = sink   = Endpoint([("data", nbits_from)])
-        self.source = source = Endpoint([("data", nbits_to), ("valid_token_count", bits_for(ratio))])
+        self.sink   = sink   = Endpoint("sink", [("data", nbits_from)])
+        self.source = source = Endpoint("source", [("data", nbits_to), ("valid_token_count", bits_for(ratio))])
         self.latency = 1
 
         # Control path
@@ -3030,8 +2785,8 @@ class _UpConverter(Module):
         # Data path
         cases = {}
         for i in range(ratio):
-            n = ratio-i-1 if reverse else i
-            cases[i] = source.data[n*nbits_from:(n+1)*nbits_from].eq(sink.data)
+            n = ratio - i - 1 if reverse else i
+            cases[i] = source.data[n * nbits_from : (n + 1) * nbits_from].eq(sink.data)
         self.sync += If(load_part, Case(demux, cases))
 
         # Valid token count
@@ -3039,8 +2794,8 @@ class _UpConverter(Module):
 
 class _DownConverter(Module):
     def __init__(self, nbits_from, nbits_to, ratio, reverse):
-        self.sink   = sink   = Endpoint([("data", nbits_from)])
-        self.source = source = Endpoint([("data", nbits_to), ("valid_token_count", 1)])
+        self.sink   = sink   = Endpoint("sink", [("data", nbits_from)])
+        self.source = source = Endpoint("source", [("data", nbits_to), ("valid_token_count", 1)])
         self.latency = 0
 
         # Control path
@@ -3049,7 +2804,7 @@ class _DownConverter(Module):
         last  = Signal("last")
         self.comb += [
             first.eq(mux == 0),
-            last.eq(mux == (ratio-1)),
+            last.eq(mux == (ratio - 1)),
             source.valid.eq(sink.valid),
             source.first.eq(sink.first & first),
             source.last.eq(sink.last & last),
@@ -3067,8 +2822,8 @@ class _DownConverter(Module):
         # Data path
         cases = {}
         for i in range(ratio):
-            n = ratio-i-1 if reverse else i
-            cases[i] = source.data.eq(sink.data[n*nbits_to:(n+1)*nbits_to])
+            n = ratio - i - 1 if reverse else i
+            cases[i] = source.data.eq(sink.data[n * nbits_to : (n + 1) * nbits_to])
         self.comb += Case(mux, cases).makedefault()
 
         # Valid token count
@@ -3076,8 +2831,8 @@ class _DownConverter(Module):
 
 class _IdentityConverter(Module):
     def __init__(self, nbits_from, nbits_to, ratio, reverse):
-        self.sink   = sink   = Endpoint([("data", nbits_from)])
-        self.source = source = Endpoint([("data", nbits_to), ("valid_token_count", 1)])
+        self.sink   = sink   = Endpoint("sink", [("data", nbits_from)])
+        self.source = source = Endpoint("source", [("data", nbits_to), ("valid_token_count", 1)])
         self.latency = 0
 
         self.comb += [
@@ -3102,9 +2857,7 @@ def _get_converter_ratio(nbits_from, nbits_to):
     return converter_cls, ratio
 
 class Converter(Module):
-    def __init__(self, nbits_from, nbits_to,
-        reverse                  = False,
-        report_valid_token_count = False):
+    def __init__(self, nbits_from, nbits_to, reverse=False, report_valid_token_count=False):
         self.cls, self.ratio = _get_converter_ratio(nbits_from, nbits_to)
 
         converter = self.cls(nbits_from, nbits_to, self.ratio, reverse)
@@ -3115,13 +2868,13 @@ class Converter(Module):
         if report_valid_token_count:
             self.source = converter.source
         else:
-            self.source = Endpoint([("data", nbits_to)])
+            self.source = Endpoint("source", [("data", nbits_to)])
             self.comb += converter.source.connect(self.source, omit=set(["valid_token_count"]))
 
 class StrideConverter(Module):
     def __init__(self, description_from, description_to, reverse=False):
-        self.sink   = sink   = Endpoint(description_from)
-        self.source = source = Endpoint(description_to)
+        self.sink   = sink   = Endpoint("sink", description_from)
+        self.source = source = Endpoint("source", description_to)
 
         nbits_from = len(sink.payload.raw_bits())
         nbits_to   = len(source.payload.raw_bits())
@@ -3141,8 +2894,8 @@ class StrideConverter(Module):
             for i in range(ratio):
                 j = 0
                 for name, width in source.description.payload_layout:
-                    src = getattr(sink, name)[i*width:(i+1)*width]
-                    dst = converter.sink.data[i*nbits_to+j:i*nbits_to+j+width]
+                    src = getattr(sink, name)[i * width : (i + 1) * width]
+                    dst = converter.sink.data[i * nbits_to + j : i * nbits_to + j + width]
                     self.comb += dst.eq(src)
                     j += width
         else:
@@ -3160,8 +2913,8 @@ class StrideConverter(Module):
             for i in range(ratio):
                 j = 0
                 for name, width in sink.description.payload_layout:
-                    src = converter.source.data[i*nbits_from+j:i*nbits_from+j+width]
-                    dst = getattr(source, name)[i*width:(i+1)*width]
+                    src = converter.source.data[i * nbits_from + j : i * nbits_from + j + width]
+                    dst = getattr(source, name)[i * width : (i + 1) * width]
                     self.comb += dst.eq(src)
                     j += width
         else:
@@ -3176,10 +2929,9 @@ class StrideConverter(Module):
             raise ValueError
 
 class PipeValid(Module):
-    """Pipe valid/payload to cut timing path"""
     def __init__(self, layout):
-        self.sink   = sink   = Endpoint(layout)
-        self.source = source = Endpoint(layout)
+        self.sink   = sink   = Endpoint("sink", layout)
+        self.source = source = Endpoint("source", layout)
 
         # Pipe when source is not valid or is ready.
         self.sync += [
@@ -3197,8 +2949,7 @@ class Pipeline(Module):
     def __init__(self, *modules):
         n = len(modules)
         m = modules[0]
-        # expose sink of first module
-        # if available
+        # expose sink of first module if available
         if hasattr(m, "sink"):
             self.sink = m.sink
         for i in range(1, n):
@@ -3218,30 +2969,22 @@ class Pipeline(Module):
         if hasattr(m, "source"):
             self.source = m.source
 
-"""
-Configuration and Status Registers
-**********************************
-
-The lowest-level description of a register is provided by the ``CSR`` class,
-which maps to the value at a single address on the target bus. Also provided
-are helper classes for dealing with values larger than the CSR buses data
-width.
-
- * ``CSRStatus``,   for providing information to the CPU.
- * ``CSRStorage``,  for allowing control via the CPU.
-
-Generating register banks
-=========================
-A module can provide bus-independent CSRs by implementing a ``get_csrs`` method
-that returns a list of instances of the classes described above.
-
-Similarly, bus-independent memories can be returned as a list by a
-``get_memories`` method.
-
-To avoid listing those manually, a module can inherit from the ``AutoCSR``
-class, which provides ``get_csrs`` and ``get_memories`` methods that scan for
-CSR and memory attributes and return their list.
-"""
+# Configuration and Status Registers
+#
+# The lowest-level description of a register is provided by the ``CSR`` class, which maps to the value at a single address on the target bus.
+# Also provided are helper classes for dealing with values larger than the CSR buses data width.
+#
+# ``CSRStatus``,  for providing information to the CPU.
+# ``CSRStorage``, for allowing control via the CPU.
+#
+# Generating register banks
+#
+# A module can provide bus-independent CSRs by implementing a ``get_csrs`` method that returns a list of instances of the classes described above.
+#
+# Similarly, bus-independent memories can be returned as a list by a ``get_memories`` method.
+#
+# To avoid listing those manually, a module can inherit from the ``AutoCSR`` class, which provides ``get_csrs`` and ``get_memories`` methods that
+# scan for CSR and memory attributes and return their list.
 
 class _CSRBase(DUID):
     def __init__(self, name, size):
@@ -3252,36 +2995,24 @@ class _CSRBase(DUID):
         self.size = size
 
 class CSR(_CSRBase):
-    """Basic CSR register.
+    """
+    Basic CSR register.
 
-    Parameters
-    ----------
     size : int
-        Size of the CSR register in bits.
-        Must be less than CSR bus width!
+        Size of the CSR register in bits. Must be less than CSR bus width!
 
-    name : string
-        Provide (or override the name) of the CSR register.
-
-    Attributes
-    ----------
     r : Signal("...", size), out
-        Contains the data written from the bus interface.
-        ``r`` is only valid when ``re`` is high.
+        Contains the data written from the bus interface. ``r`` is only valid when ``re`` is high.
 
     re : Signal("..."), out
-        The strobe signal for ``r``.
-        It is active for one cycle, after or during a write from the bus.
+        The strobe signal for ``r``. It is active for one cycle, after or during a write from the bus.
 
     w : Signal("...", size), in
-        The value to be read from the bus.
-        Must be provided at all times.
+        The value to be read from the bus. Must be provided at all times.
 
     we : Signal("..."), out
-        The strobe signal for ``w``.
-        It is active for one cycle, after or during a read from the bus.
+        The strobe signal for ``w``. It is active for one cycle, after or during a read from the bus.
     """
-
     def __init__(self, name, size=1):
         _CSRBase.__init__(self, name, size)
         self.re = Signal(self.name + "_re")
@@ -3308,25 +3039,14 @@ class CSRAccess(IntEnum):
     ReadWrite = 2
 
 class CSRField(Signal):
-    """CSR Field.
-
-    Parameters / Attributes
-    -----------------------
-    name : string
-        Name of the CSR field.
-
-    size : int
-        Size of the CSR field in bits.
+    """
+    CSR Field.
 
     offset : int (optional)
         Offset of the CSR field on the CSR register in bits.
 
     reset: int (optional)
         Reset value of the CSR field.
-
-    description: string (optional)
-        Description of the CSR Field (can be used to document the code and/or to be reused by tools
-        to create the documentation).
 
     pulse: boolean (optional)
         Field value is only valid for one cycle when set to True. Only valid for 1-bit fields.
@@ -3337,32 +3057,26 @@ class CSRField(Signal):
     values: list (optional)
         A list of supported values.
         If this is specified, a table will be generated containing the values in the specified order.
-        The `value` must be an integer in order to allow for automatic constant generation in an IDE,
-        except "do not care" bits are allowed.
-        In the three-tuple variation, the middle value represents an enum value that can be displayed
-        instead of the value.
-                    [
-                        ("0b0000", "disable the timer"),
-                        ("0b0001", "slow", "slow timer"),
-                        ("0b1xxx", "fast timer"),
-                    ]
+        The `value` must be an integer in order to allow for automatic constant generation in an IDE, except "do not care" bits are allowed.
+        In the three-tuple variation, the middle value represents an enum value that can be displayed instead of the value.
+            [
+                ("0b0000", "disable the timer"),
+                ("0b0001", "slow", "slow timer"),
+                ("0b1xxx", "fast timer"),
+            ]
     """
-
-    def __init__(self, name, size=1, offset=None, reset=0, description=None, pulse=False, access=None, values=None):
+    def __init__(self, name, size=1, offset=None, reset=0, pulse=False, access=None, values=None):
         assert access is None or (access in CSRAccess.values())
         self.name        = name
         self.size        = size
         self.offset      = offset
         self.reset_value = reset
-        self.description = description
         self.access      = access
         self.pulse       = pulse
         self.values      = values
         Signal.__init__(self, name, size, reset=reset)
 
 class CSRFieldAggregate:
-    """CSR Field Aggregate."""
-
     def __init__(self, fields, access):
         self.check_names(fields)
         self.check_ordering_overlap(fields)
@@ -3410,45 +3124,30 @@ class CSRFieldAggregate:
         return reset
 
 class CSRStatus(_CompoundCSR, Module):
-    """Status Register.
+    """
+    Status Register.
 
     The ``CSRStatus`` class is meant to be used as a status register that is read-only from the CPU.
-
     The user design is expected to drive its ``status`` signal.
-
-    The advantage of using ``CSRStatus`` instead of using ``CSR`` and driving ``w`` is that the
-    width of ``CSRStatus`` can be arbitrary.
-
-    Status registers larger than the bus word width are automatically broken down into several
-    ``CSR`` registers to span several addresses.
-
+    The advantage of using ``CSRStatus`` instead of using ``CSR`` and driving ``w`` is that the width of ``CSRStatus`` can be arbitrary.
+    Status registers larger than the bus word width are automatically broken down into several ``CSR`` registers to span several addresses.
     *Be careful, though:* the atomicity of reads is not guaranteed.
 
-    Parameters
-    ----------
     size : int
-        Size of the CSR register in bits.
-        Can be bigger than the CSR bus width.
+        Size of the CSR register in bits. Can be bigger than the CSR bus width.
 
     reset : string
         Value of the register after reset.
 
-    name : string
-        Provide (or override the name) of the ``CSRStatus`` register.
-
-    Attributes
-    ----------
     status : Signal("...", size), in
         The value of the CSRStatus register.
     """
-
-    def __init__(self, name, size=1, reset=0, fields=[], description=None):
+    def __init__(self, name, size=1, reset=0, fields=[]):
         if fields != []:
             self.fields = CSRFieldAggregate(fields, CSRAccess.ReadOnly)
             size  = self.fields.get_size()
             reset = self.fields.get_reset()
         _CompoundCSR.__init__(self, name, size)
-        self.description = description
         self.status = Signal("status", self.size, reset=reset)
         self.we = Signal("we")
         for field in fields:
@@ -3464,14 +3163,12 @@ class CSRStatus(_CompoundCSR, Module):
         self.comb += self.we.eq(sc.we)
 
 class CSRStorage(_CompoundCSR, Module):
-    """Control Register.
+    """
+    Control Register.
 
     The ``CSRStorage`` class provides a memory location that can be read and written by the CPU, and read and optionally written by the design.
-
     It can span several CSR addresses.
 
-    Parameters
-    ----------
     size : int
         Size of the CSR register in bits. Can be bigger than the CSR bus width.
 
@@ -3482,42 +3179,30 @@ class CSRStorage(_CompoundCSR, Module):
         If `True`, do not generate reset logic for CSRStorage.
 
     atomic_write : bool
-        Provide an mechanism for atomic CPU writes is provided. When enabled, writes to the first
-        CSR addresses go to a back-buffer whose contents are atomically copied to the main buffer
-        when the last address is written.
+        Provide an mechanism for atomic CPU writes is provided. When enabled, writes to the first CSR addresses go to a back-buffer whose contents
+        are atomically copied to the main buffer when the last address is written.
 
     write_from_dev : bool
-        Allow the design to update the CSRStorage value. *Warning*: The atomicity of reads by the
-         CPU is not guaranteed.
+        Allow the design to update the CSRStorage value. *Warning*: The atomicity of reads by the CPU is not guaranteed.
 
-    name : string
-        Provide (or override the name) of the ``CSRStatus`` register.
-
-    Attributes
-    ----------
     storage : Signal("...", size), out
         Signal providing the value of the ``CSRStorage`` object.
 
     re : Signal("..."), in
-        The strobe signal indicating a write to the ``CSRStorage`` register from the CPU. It is active
-        for one cycle, after or during a write from the bus.
+        The strobe signal indicating a write to the ``CSRStorage`` register from the CPU. It is active for one cycle, after or during a write from the bus.
 
     we : Signal("..."), out
-        The strobe signal to write to the ``CSRStorage`` register from the logic. Only available when
-        ``write_from_dev == True``
+        The strobe signal to write to the ``CSRStorage`` register from the logic. Only available when ``write_from_dev == True``
 
     dat_w : Signal("..."), out
-        The write data to write to the ``CSRStorage`` register from the logic. Only available when
-        ``write_from_dev == True``
+        The write data to write to the ``CSRStorage`` register from the logic. Only available when ``write_from_dev == True``
     """
-
-    def __init__(self, name, size=1, reset=0, reset_less=False, fields=[], atomic_write=False, write_from_dev=False, description=None):
+    def __init__(self, name, size=1, reset=0, reset_less=False, fields=[], atomic_write=False, write_from_dev=False):
         if fields != []:
             self.fields = CSRFieldAggregate(fields, CSRAccess.ReadWrite)
             size  = self.fields.get_size()
             reset = self.fields.get_reset()
         _CompoundCSR.__init__(self, name, size)
-        self.description = description
         self.storage = Signal("storage", self.size, reset=reset, reset_less=reset_less)
         self.atomic_write = atomic_write
         self.re = Signal("re")
@@ -3537,17 +3222,17 @@ class CSRStorage(_CompoundCSR, Module):
         if nwords > 1 and self.atomic_write:
             backstore = Signal(self.name + "_backstore", self.size - busword)
         for i in reversed(range(nwords)):
-            nbits = min(self.size - i*busword, busword)
+            nbits = min(self.size - i * busword, busword)
             sc = CSR(self.name + str(i) if nwords else self.name, nbits)
             self.simple_csrs.append(sc)
-            lo = i*busword
-            hi = lo+nbits
+            lo = i * busword
+            hi = lo + nbits
             # read
             self.comb += sc.w.eq(self.storage[lo:hi])
             # write
             if nwords > 1 and self.atomic_write:
                 if i:
-                    self.sync += If(sc.re, backstore[lo-busword:hi-busword].eq(sc.r))
+                    self.sync += If(sc.re, backstore[lo - busword : hi - busword].eq(sc.r))
                 else:
                     self.sync += If(sc.re, self.storage.eq(Cat(sc.r, backstore)))
             else:
@@ -3577,7 +3262,7 @@ def _make_gatherer(method, cls, prefix_cb):
         except AttributeError:
             prefixed = self.__prefixed = set()
         r = []
-        for k, v in xdir(self, True):
+        for k, v in xdir(self):
             if k not in exclude:
                 if isinstance(v, cls):
                     r.append(v)
@@ -3589,7 +3274,8 @@ def _make_gatherer(method, cls, prefix_cb):
     return gatherer
 
 class AutoCSR:
-    """MixIn to provide bus independent access to CSR registers.
+    """
+    MixIn to provide bus independent access to CSR registers.
 
     A module can inherit from the ``AutoCSR`` class, which provides ``get_csrs`` and ``get_memories`` methods
     that scan for CSR and memory attributes and return their list.
@@ -3600,14 +3286,6 @@ class AutoCSR:
     """
     get_memories = _make_gatherer("get_memories", Memory, memprefix)
     get_csrs = _make_gatherer("get_csrs", _CSRBase, csrprefix)
-
-"""
-CSR-2 bus
-=========
-
-The CSR-2 bus is a low-bandwidth, resource-sensitive bus designed for accessing
-the configuration and status registers of cores from software.
-"""
 
 _csr_bus_layout = [
     ("adr",  "address_width", DIR_M_TO_S),
@@ -3621,7 +3299,7 @@ class CSRBusInterface(Record):
         self.data_width    = data_width
         self.address_width = address_width
         self.alignment     = alignment
-        Record.__init__(self, set_layout_parameters(_csr_bus_layout, data_width=data_width, address_width=address_width))
+        Record.__init__(self, None, set_layout_parameters(_csr_bus_layout, data_width=data_width, address_width=address_width))
         self.adr.reset_less   = True
         self.dat_w.reset_less = True
         self.dat_r.reset_less = True
@@ -3690,7 +3368,7 @@ class CSRBusSRAM(Module):
             ]
             if not read_only:
                 wregs = []
-                for i in range(csrw_per_memw-1):
+                for i in range(csrw_per_memw - 1):
                     wreg = Signal("wreg", data_width, reset_less=True)
                     self.sync += If(sel & self.bus.we & (self.bus.adr[:word_bits] == i), wreg.eq(self.bus.dat_w))
                     wregs.append(wreg)
@@ -3708,10 +3386,10 @@ class CSRBusSRAM(Module):
                 ]
 
         if self._page is None:
-            self.comb += port.adr.eq(self.bus.adr[word_bits:word_bits+len(port.adr)])
+            self.comb += port.adr.eq(self.bus.adr[word_bits : word_bits + len(port.adr)])
         else:
             pv = self._page.storage
-            self.comb += port.adr.eq(Cat(self.bus.adr[word_bits:word_bits+len(port.adr)-len(pv)], pv))
+            self.comb += port.adr.eq(Cat(self.bus.adr[word_bits : word_bits + len(port.adr) - len(pv)], pv))
 
     def get_csrs(self):
         if self._page is None:
@@ -3737,7 +3415,7 @@ class CSRBank(Module):
                 c.finalize(busword)
                 self.simple_csrs += c.get_simple_csrs()
                 self.submodules += c
-        self.decode_bits = bits_for(len(self.simple_csrs)-1)
+        self.decode_bits = bits_for(len(self.simple_csrs) - 1)
 
         sel = Signal("sel")
         self.comb += sel.eq(self.bus.adr[log2_int(aligned_paging):] == address)
@@ -3766,12 +3444,10 @@ class CSRBankArray(Module):
         self.address_map        = address_map
         self.paging             = paging
         self.soc_bus_data_width = soc_bus_data_width
-        self.scan(ifargs, ifkwargs)
 
-    def scan(self, ifargs, ifkwargs):
         self.banks = []
         self.srams = []
-        for name, obj in xdir(self.source, True):
+        for name, obj in xdir(self.source):
             if hasattr(obj, "get_csrs"):
                 csrs = obj.get_csrs()
             else:
@@ -3816,10 +3492,9 @@ class CSRBankArray(Module):
         return [i.bus for i in self.get_rmaps() + self.get_mmaps()]
 
 class _EventSource(DUID):
-    """Base class for EventSources.
+    """
+    Base class for EventSources.
 
-    Attributes
-    ----------
     trigger : Signal("..."), in
         Signal which interfaces with the user design.
 
@@ -3834,36 +3509,24 @@ class _EventSource(DUID):
     clear : Signal("..."), in
         Clear after a trigger event.
         Ignored by some event sources.
-
-    name : str
-        A short name for this EventSource, usable as a Python identifier
-
-    description: str
-        A formatted description of this EventSource, including when
-        it will fire and how it behaves.
     """
-
-    def __init__(self, name=None, description=None):
+    def __init__(self, name=None):
         DUID.__init__(self)
         self.status = Signal("status")
         self.pending = Signal("pending")
         self.trigger = Signal("trigger")
         self.clear = Signal("clear")
         self.name = name or "evs"
-        self.description = description
 
 class EventSourcePulse(Module, _EventSource):
-    """EventSource which triggers on a pulse.
-
-    The event stays asserted after the ``trigger`` signal goes low, and until
-    software acknowledges it.
-
-    An example use is to pulse ``trigger`` high for 1 cycle after the reception
-    of a character in a UART.
     """
+    EventSource which triggers on a pulse.
 
-    def __init__(self, name=None, description=None):
-        _EventSource.__init__(self, name, description)
+    The event stays asserted after the ``trigger`` signal goes low, and until software acknowledges it.
+    An example use is to pulse ``trigger`` high for 1 cycle after the reception of a character in a UART.
+    """
+    def __init__(self, name=None):
+        _EventSource.__init__(self, name)
         self.comb += self.status.eq(0)
         self.sync += [
             If(self.clear, self.pending.eq(0)),
@@ -3871,14 +3534,13 @@ class EventSourcePulse(Module, _EventSource):
         ]
 
 class EventSourceProcess(Module, _EventSource):
-    """EventSource which triggers on a falling edge.
-
-    The purpose of this event source is to monitor the status of processes and
-    generate an interrupt on their completion.
     """
+    EventSource which triggers on a falling edge.
 
-    def __init__(self, name=None, description=None):
-        _EventSource.__init__(self, name, description)
+    The purpose of this event source is to monitor the status of processes and generate an interrupt on their completion.
+    """
+    def __init__(self, name=None):
+        _EventSource.__init__(self, name)
         self.comb += self.status.eq(self.trigger)
         old_trigger = Signal("old_trigger")
         self.sync += [
@@ -3888,36 +3550,30 @@ class EventSourceProcess(Module, _EventSource):
         ]
 
 class EventManager(Module, AutoCSR):
-    """Provide an IRQ and CSR registers for a set of event sources.
+    """
+    Provide an IRQ and CSR registers for a set of event sources.
 
     Each event source is assigned one bit in each of those registers.
 
-    Attributes
-    ----------
     irq : Signal("..."), out
-        A signal which is driven high whenever there is a pending and unmasked
-        event.
+        A signal which is driven high whenever there is a pending and unmasked event.
         It is typically connected to an interrupt line of a CPU.
 
     status : CSR(n), read-only
-        Contains the current level of the trigger line of
-        ``EventSourceProcess`` and ``EventSourceLevel`` sources.
+        Contains the current level of the trigger line of ``EventSourceProcess`` and ``EventSourceLevel`` sources.
         It is always 0 for ``EventSourcePulse``
 
     pending : CSR(n), read-write
-        Contains the currently asserted events. Writing 1 to the bit assigned
-        to an event clears it.
+        Contains the currently asserted events. Writing 1 to the bit assigned to an event clears it.
 
     enable : CSR(n), read-write
-        Defines which asserted events will cause the ``irq`` line to be
-        asserted.
+        Defines which asserted events will cause the ``irq`` line to be asserted.
     """
-
     def __init__(self):
         self.irq = Signal("irq")
 
     def do_finalize(self):
-        sources_u = [v for k, v in xdir(self, True) if isinstance(v, _EventSource)]
+        sources_u = [v for k, v in xdir(self) if isinstance(v, _EventSource)]
         sources = sorted(sources_u, key=lambda x: x.duid)
         n = len(sources)
         self.status = CSR("status", n)
@@ -3942,20 +3598,18 @@ class EventManager(Module, AutoCSR):
             self.submodules += value
 
 class SharedIRQ(Module):
-    """Allow an IRQ signal to be shared between multiple EventManager objects."""
-
     def __init__(self, *event_managers):
         self.irq = Signal("irq")
         self.comb += self.irq.eq(reduce(operator.or_, [ev.irq for ev in event_managers]))
 
 class GPIOIn(Module, AutoCSR):
     def __init__(self, signal):
-        self._in = CSRStatus("in", len(signal), description="GPIO Input(s) Status.")
+        self._in = CSRStatus("in", len(signal))
         self.specials += MultiReg(signal, self._in.status)
 
 class GPIOOut(Module, AutoCSR):
     def __init__(self, signal):
-        self._out = CSRStorage("out", len(signal), description="GPIO Output(s) Control.")
+        self._out = CSRStorage("out", len(signal))
         self.comb += signal.eq(self._out.storage)
 
 class GPIOInOut(Module):
@@ -3984,7 +3638,7 @@ class WishboneInterface(Record):
     def __init__(self, data_width=32, adr_width=30):
         self.data_width = data_width
         self.adr_width  = adr_width
-        Record.__init__(self, set_layout_parameters(_wishbone_layout,
+        Record.__init__(self, None, set_layout_parameters(_wishbone_layout,
             adr_width  = adr_width,
             data_width = data_width,
             sel_width  = data_width // 8))
@@ -4331,8 +3985,8 @@ class WishboneCache(Module):
         tag_mem = Memory("tag_mem", layout_len(tag_layout), 2**linebits)
         tag_port = tag_mem.get_port(write_capable=True)
         self.specials += tag_mem, tag_port
-        tag_do = Record(tag_layout)
-        tag_di = Record(tag_layout)
+        tag_do = Record("tag_do", tag_layout)
+        tag_di = Record("tag_di", tag_layout)
         self.comb += [
             tag_do.raw_bits().eq(tag_port.dat_r),
             tag_port.dat_w.eq(tag_di.raw_bits())
@@ -4968,7 +4622,8 @@ def get_sys_phases(nphases, sys_latency, cas_latency):
     return cmd_phase, dat_phase
 
 class PHYPadsCombiner:
-    """PHY Pads Combiner
+    """
+    PHY Pads Combiner
 
     Combine DRAM pads from fully dissociated chips in a unique DRAM pads structure.
 
@@ -5094,9 +4749,9 @@ class LiteDRAMInterface(Record):
         self.nranks   = settings.phy.nranks
         self.settings = settings
 
-        layout = [("bank"+str(i), cmd_layout(self.address_width)) for i in range(self.nbanks)]
+        layout = [("bank" + str(i), cmd_layout(self.address_width)) for i in range(self.nbanks)]
         layout += data_layout(self.data_width)
-        Record.__init__(self, layout)
+        Record.__init__(self, None, layout)
 
 class LiteDRAMNativePort(Settings):
     def __init__(self, mode, address_width, data_width, clock_domain="sys", id=0):
@@ -5104,9 +4759,9 @@ class LiteDRAMNativePort(Settings):
 
         self.lock = Signal("lock")
 
-        self.cmd   = Endpoint(cmd_description(address_width))
-        self.wdata = Endpoint(wdata_description(data_width))
-        self.rdata = Endpoint(rdata_description(data_width))
+        self.cmd   = Endpoint("cmd", cmd_description(address_width))
+        self.wdata = Endpoint("wdata", wdata_description(data_width))
+        self.rdata = Endpoint("rdata", rdata_description(data_width))
 
         self.flush = Signal("flush")
 
@@ -5208,9 +4863,9 @@ def phase_description(addressbits, bankbits, nranks, databits):
 
 class DFIInterface(Record):
     def __init__(self, addressbits, bankbits, nranks, databits, nphases=1):
-        layout = [("p"+str(i), phase_description(addressbits, bankbits, nranks, databits)) for i in range(nphases)]
-        Record.__init__(self, layout)
-        self.phases = [getattr(self, "p"+str(i)) for i in range(nphases)]
+        layout = [("p" + str(i), phase_description(addressbits, bankbits, nranks, databits)) for i in range(nphases)]
+        Record.__init__(self, None, layout)
+        self.phases = [getattr(self, "p" + str(i)) for i in range(nphases)]
         for p in self.phases:
             p.cas_n.reset = 1
             p.cs_n.reset = (2**nranks-1)
@@ -5738,7 +5393,8 @@ class DFIInjector(Module, AutoCSR):
         self.comb += [phase.reset_n.eq(self._control.fields.reset_n) for phase in inti.phases if hasattr(phase, "reset_n")]
 
 class RefreshExecuter(Module):
-    """Refresh Executer
+    """
+    Refresh Executer
 
     Execute the refresh sequence to the DRAM:
     - Send a "Precharge All" command
@@ -5788,7 +5444,8 @@ class RefreshExecuter(Module):
         ]
 
 class RefreshSequencer(Module):
-    """Refresh Sequencer
+    """
+    Refresh Sequencer
 
     Sequence N refreshs to the DRAM.
     """
@@ -5813,7 +5470,8 @@ class RefreshSequencer(Module):
         self.comb += self.done.eq(executer.done & (count == 0))
 
 class RefreshTimer(Module):
-    """Refresh Timer
+    """
+    Refresh Timer
 
     Generate periodic pulses (tREFI period) to trigger DRAM refresh.
     """
@@ -5839,7 +5497,8 @@ class RefreshTimer(Module):
         ]
 
 class RefreshPostponer(Module):
-    """Refresh Postponer
+    """
+    Refresh Postponer
 
     Postpone N Refresh requests and generate a request when N is reached.
     """
@@ -5860,7 +5519,8 @@ class RefreshPostponer(Module):
         ]
 
 class ZQCSExecuter(Module):
-    """ZQ Short Calibration Executer
+    """
+    ZQ Short Calibration Executer
 
     Execute the ZQCS sequence to the DRAM:
     - Send a "Precharge All" command
@@ -5906,7 +5566,8 @@ class ZQCSExecuter(Module):
         ]
 
 class Refresher(Module):
-    """Refresher
+    """
+    Refresher
 
     Manage DRAM refresh.
 
@@ -5923,7 +5584,7 @@ class Refresher(Module):
         assert postponing <= 8
         abits  = settings.geom.addressbits
         babits = settings.geom.bankbits + log2_int(settings.phy.nranks)
-        self.cmd = cmd = Endpoint(cmd_request_rw_layout(a=abits, ba=babits))
+        self.cmd = cmd = Endpoint("cmd", cmd_request_rw_layout(a=abits, ba=babits))
 
         wants_refresh = Signal("wants_refresh")
         wants_zqcs    = Signal("wants_zqcs")
@@ -6003,7 +5664,8 @@ class Refresher(Module):
             )
 
 class _AddressSlicer:
-    """Helper for extracting row/col from address
+    """
+    Helper for extracting row/col from address
 
     Column occupies lower bits of the address, row - higher bits. Address has
     a forced alignment, so column does not contain alignment bits.
@@ -6021,7 +5683,8 @@ class _AddressSlicer:
         return Cat(Replicate(0, self.address_align), address[:split])
 
 class BankMachine(Module):
-    """Converts requests from ports into DRAM commands
+    """
+    Converts requests from ports into DRAM commands
 
     BankMachine abstracts single DRAM bank by keeping track of the currently
     selected row. It converts requests from LiteDRAMCrossbar to targetted
@@ -6059,23 +5722,23 @@ class BankMachine(Module):
 
     Attributes
     ----------
-    req : Record(cmd_layout)
+    req : Record("...", cmd_layout)
         Stream of requests from LiteDRAMCrossbar
     refresh_req : Signal("..."), in
         Indicates that refresh needs to be done, connects to Refresher.cmd.valid
     refresh_gnt : Signal("..."), out
         Indicates that refresh permission has been granted, satisfying timings
-    cmd : Endpoint(cmd_request_rw_layout)
+    cmd : Endpoint("...", cmd_request_rw_layout)
         Stream of commands to the Multiplexer
     """
     def __init__(self, n, address_width, address_align, nranks, settings):
-        self.req = req = Record(cmd_layout(address_width))
+        self.req = req = Record("req", cmd_layout(address_width))
         self.refresh_req = refresh_req = Signal("refresh_req")
         self.refresh_gnt = refresh_gnt = Signal("refresh_gnt")
 
         a  = settings.geom.addressbits
         ba = settings.geom.bankbits + log2_int(nranks)
-        self.cmd = cmd = Endpoint(cmd_request_rw_layout(a, ba))
+        self.cmd = cmd = Endpoint("cmd", cmd_request_rw_layout(a, ba))
 
         auto_precharge = Signal("auto_precharge")
 
@@ -6219,7 +5882,8 @@ class BankMachine(Module):
         fsm.delayed_enter("TRCD", "REGULAR", settings.timing.tRCD - 1)
 
 class Bandwidth(Module, AutoCSR):
-    """Measures LiteDRAM bandwidth
+    """
+    Measures LiteDRAM bandwidth
 
     This module works by counting the number of read/write commands issued by
     the controller during a fixed time period. To copy the values registered
@@ -6227,7 +5891,7 @@ class Bandwidth(Module, AutoCSR):
 
     Parameters
     ----------
-    cmd : Endpoint(cmd_request_rw_layout)
+    cmd : Endpoint("...", cmd_request_rw_layout)
         Multiplexer endpoint on which all read/write requests are being sent
     data_width : int, in
         Data width that can be read back from CSR
@@ -6292,14 +5956,15 @@ class Bandwidth(Module, AutoCSR):
         ]
 
 class _CommandChooser(Module):
-    """Arbitrates between requests, filtering them based on their type
+    """
+    Arbitrates between requests, filtering them based on their type
 
     Uses RoundRobin to choose current request, filters requests based on
     `want_*` signals.
 
     Parameters
     ----------
-    requests : [Endpoint(cmd_request_rw_layout), ...]
+    requests : [Endpoint("...", cmd_request_rw_layout), ...]
         Request streams to consider for arbitration
 
     Attributes
@@ -6312,7 +5977,7 @@ class _CommandChooser(Module):
         Consider command requests (without ACT)
     want_activates : Signal, in
         Also consider ACT commands
-    cmd : Endpoint(cmd_request_rw_layout)
+    cmd : Endpoint("...", cmd_request_rw_layout)
         Currently selected request stream (when ~cmd.valid, cas/ras/we are 0)
     """
     def __init__(self, requests):
@@ -6325,7 +5990,7 @@ class _CommandChooser(Module):
         ba = len(requests[0].ba)
 
         # cas/ras/we are 0 when valid is inactive
-        self.cmd = cmd = Endpoint(cmd_request_rw_layout(a, ba))
+        self.cmd = cmd = Endpoint("cmd", cmd_request_rw_layout(a, ba))
 
         n = len(requests)
 
@@ -6382,7 +6047,8 @@ class _CommandChooser(Module):
 (STEER_NOP, STEER_CMD, STEER_REQ, STEER_REFRESH) = range(4)
 
 class _Steerer(Module):
-    """Connects selected request to DFI interface
+    """
+    Connects selected request to DFI interface
 
     cas/ras/we/is_write/is_read are connected only when `cmd.valid & cmd.ready`.
     Rank bits are decoded and used to drive cs_n in multi-rank systems,
@@ -6390,10 +6056,10 @@ class _Steerer(Module):
 
     Parameters
     ----------
-    commands : [Endpoint(cmd_request_rw_layout), ...]
+    commands : [Endpoint("...", cmd_request_rw_layout), ...]
         Command streams to choose from. Must be of len=4 in the order:
             NOP, CMD, REQ, REFRESH
-        NOP can be of type Record(cmd_request_rw_layout) instead, so that it is
+        NOP can be of type Record("...", cmd_request_rw_layout) instead, so that it is
         always considered invalid (because of lack of the `valid` attribute).
     dfi : DFIInterface
         DFI interface connected to PHY
@@ -6453,7 +6119,8 @@ class _Steerer(Module):
             ]
 
 class Multiplexer(Module, AutoCSR):
-    """Multplexes requets from BankMachines to DFI
+    """
+    Multplexes requets from BankMachines to DFI
 
     This module multiplexes requests from BankMachines (and Refresher) and
     connects them to DFI. Refresh commands are coordinated between the Refresher
@@ -6490,7 +6157,7 @@ class Multiplexer(Module, AutoCSR):
             self.comb += choose_req.want_activates.eq(ras_allowed)
 
         # Command steering
-        nop = Record(cmd_request_layout(settings.geom.addressbits, log2_int(len(bank_machines))))
+        nop = Record("nop", cmd_request_layout(settings.geom.addressbits, log2_int(len(bank_machines))))
         # nop must be 1st
         commands = [nop, choose_cmd.cmd, choose_req.cmd, refresher.cmd]
         steerer = _Steerer(commands, dfi)
@@ -6729,7 +6396,8 @@ class LiteDRAMController(Module):
         return self.multiplexer.get_csrs()
 
 class LiteDRAMCrossbar(Module):
-    """Multiplexes LiteDRAMController (slave) between ports (masters)
+    """
+    Multiplexes LiteDRAMController (slave) between ports (masters)
 
     To get a port to LiteDRAM, use the `get_port` method. It handles data width
     conversion and clock domain crossing, returning LiteDRAMNativePort.
@@ -7239,7 +6907,8 @@ class LiteDRAMNativePortCDC(Module):
             self.submodules += Pipeline(port_to.rdata, rdata_fifo, port_from.rdata)
 
 class LiteDRAMNativePortDownConverter(Module):
-    """LiteDRAM port DownConverter
+    """
+    LiteDRAM port DownConverter
 
     This module reduces user port data width to fit controller data width.
     With N = port_from.data_width/port_to.data_width:
@@ -7301,7 +6970,8 @@ class LiteDRAMNativePortDownConverter(Module):
 
 class LiteDRAMNativeWritePortUpConverter(Module):
     # TODO: finish and remove hack
-    """LiteDRAM write port UpConverter
+    """
+    LiteDRAM write port UpConverter
 
     This module increase user port data width to fit controller data width.
     With N = port_to.data_width/port_from.data_width:
@@ -7365,7 +7035,8 @@ class LiteDRAMNativeWritePortUpConverter(Module):
         self.submodules += Pipeline(port_from.wdata, wdata_converter, port_to.wdata)
 
 class LiteDRAMNativeReadPortUpConverter(Module):
-    """LiteDRAM port UpConverter
+    """
+    LiteDRAM port UpConverter
 
     This module increase user port data width to fit controller data width.
     With N = port_to.data_width/port_from.data_width:
@@ -7546,7 +7217,8 @@ class _SpeedgradeTimings(Settings):
         self.set_attributes(locals())
 
 class DDR3Module:
-    """DDR3 SDRAM module geometry and timings.
+    """
+    DDR3 SDRAM module geometry and timings.
 
     SDRAM controller has to ensure that all geometry and
     timings parameters are fulfilled. Timings parameters
@@ -7868,11 +7540,12 @@ class IoBuf(Module):
 
 @ResetInserter()
 class RxBitstuffRemover(Module):
-    """RX Bitstuff Removal
+    """
+    RX Bitstuff Removal
 
     Long sequences of 1's would cause the receiver to lose it's lock on the
-    transmitter's clock.  USB solves this with bitstuffing.  A '0' is stuffed
-    after every 6 consecutive 1's.  This extra bit is required to recover the
+    transmitter's clock. USB solves this with bitstuffing. A '0' is stuffed
+    after every 6 consecutive 1's. This extra bit is required to recover the
     clock, but it should not be passed on to higher layers in the device.
 
     https://www.pjrc.com/teensy/beta/usb20.pdf, USB2 Spec, 7.1.9
@@ -7885,7 +7558,7 @@ class RxBitstuffRemover(Module):
     Input Ports
     ------------
     i_valid : Signal("...", 1)
-        Qualifier for all of the input signals.  Indicates one bit of valid
+        Qualifier for all of the input signals. Indicates one bit of valid
         data is present on the inputs.
 
     i_data : Signal("...", 1)
@@ -7903,11 +7576,10 @@ class RxBitstuffRemover(Module):
     o_error : Signal("...", 1)
         Indicates there has been a bitstuff error. A bitstuff error occurs
         when there should be a stuffed '0' after 6 consecutive 1's; but instead
-        of a '0', there is an additional '1'.  This is normal during IDLE, but
+        of a '0', there is an additional '1'. This is normal during IDLE, but
         should never happen within a packet.
         Qualified by valid.
     """
-
     def __init__(self):
         self.i_valid = Signal("i_valid")
         self.i_data = Signal("i_data")
@@ -7952,7 +7624,8 @@ class RxBitstuffRemover(Module):
         ]
 
 class RxClockDataRecovery(Module):
-    """RX Clock Data Recovery module.
+    """
+    RX Clock Data Recovery module.
 
     RxClockDataRecovery synchronizes the USB differential pair with the FPGAs
     clocks, de-glitches the differential pair, and recovers the incoming clock
@@ -7996,15 +7669,14 @@ class RxClockDataRecovery(Module):
         Represents SE1 on the incoming USB data pair.
         Qualify with line_state_valid.
     """
-
     def __init__(self, usbp_raw, usbn_raw):
         if False:
             #######################################################################
             # Synchronize raw USB signals
             #
             # We need to synchronize the raw USB signals with the usb_48 clock
-            # domain.  MultiReg implements a multi-stage shift register that takes
-            # care of this for us.  Without MultiReg we would have metastability
+            # domain. MultiReg implements a multi-stage shift register that takes
+            # care of this for us. Without MultiReg we would have metastability
             # issues.
             #
             usbp = Signal("usbp", reset=1)
@@ -8013,7 +7685,7 @@ class RxClockDataRecovery(Module):
             self.specials += MultiReg(usbp_raw, usbp, n=1, reset=1)
             self.specials += MultiReg(usbn_raw, usbn, n=1)
         else:
-            # Leave raw USB signals meta-stable.  The synchronizer should clean
+            # Leave raw USB signals meta-stable. The synchronizer should clean
             # them up.
             usbp = usbp_raw
             usbn = usbn_raw
@@ -8021,13 +7693,13 @@ class RxClockDataRecovery(Module):
         #######################################################################
         # Line State Recovery State Machine
         #
-        # The receive path doesn't use a differential receiver.  Because of
+        # The receive path doesn't use a differential receiver. Because of
         # this there is a chance that one of the differential pairs will appear
         # to have changed to the new state while the other is still in the old
-        # state.  The following state machine detects transitions and waits an
+        # state. The following state machine detects transitions and waits an
         # extra sampling clock before decoding the state on the differential
-        # pair.  This transition period # will only ever last for one clock as
-        # long as there is no noise on the line.  If there is enough noise on
+        # pair. This transition period # will only ever last for one clock as
+        # long as there is no noise on the line. If there is enough noise on
         # the line then the data may be corrupted and the packet will fail the
         # data integrity checks.
         #
@@ -8066,7 +7738,7 @@ class RxClockDataRecovery(Module):
         # Clock and Data Recovery
         #
         # The DT state from the line state recovery state machine is used to align to
-        # transmit clock.  The line state is sampled in the middle of the bit time.
+        # transmit clock. The line state is sampled in the middle of the bit time.
         #
         # Example of signal relationships
         # -------------------------------
@@ -8107,7 +7779,8 @@ class RxClockDataRecovery(Module):
 
 @ResetInserter()
 class RxPacketDetect(Module):
-    """Packet Detection
+    """
+    Packet Detection
 
     Full Speed packets begin with the following sequence:
 
@@ -8121,12 +7794,12 @@ class RxPacketDetect(Module):
 
         JJJJJJJJ
 
-    This translates to a series of '1's since there are no transitions.  Given
+    This translates to a series of '1's since there are no transitions. Given
     this information, it is easy to detect the beginning of a packet by looking
     for 00000001.
 
-    The end of a packet is even easier to detect.  The end of a packet is
-    signaled with two SE0 and one J.  We can just look for the first SE0 to
+    The end of a packet is even easier to detect. The end of a packet is
+    signaled with two SE0 and one J. We can just look for the first SE0 to
     detect the end of the packet.
 
     Packet detection can occur in parallel with bitstuff removal.
@@ -8136,7 +7809,7 @@ class RxPacketDetect(Module):
     Input Ports
     ------------
     i_valid : Signal("...", 1)
-        Qualifier for all of the input signals.  Indicates one bit of valid
+        Qualifier for all of the input signals. Indicates one bit of valid
         data is present on the inputs.
 
     i_data : Signal("...", 1)
@@ -8158,7 +7831,6 @@ class RxPacketDetect(Module):
     o_pkt_end : Signal("...", 1)
         Asserted for one clock after the last data bit of a packet was received.
     """
-
     def __init__(self):
         self.i_valid = Signal("i_valid")
         self.i_data = Signal("i_data")
@@ -8215,11 +7887,12 @@ class RxPacketDetect(Module):
         ]
 
 class RxNRZIDecoder(Module):
-    """RX NRZI decoder.
+    """
+    RX NRZI decoder.
 
     In order to ensure there are enough bit transitions for a receiver to recover
-    the clock usb uses NRZI encoding.  This module processes the incoming
-    dj, dk, se0, and valid signals and decodes them to data values.  It
+    the clock usb uses NRZI encoding. This module processes the incoming
+    dj, dk, se0, and valid signals and decodes them to data values. It
     also pipelines the se0 signal and passes it through unmodified.
 
     https://www.pjrc.com/teensy/beta/usb20.pdf, USB2 Spec, 7.1.8
@@ -8234,7 +7907,7 @@ class RxNRZIDecoder(Module):
     Input ports are passed in via the constructor.
 
     i_valid : Signal("...", 1)
-        Qualifier for all of the input signals.  Indicates one bit of valid
+        Qualifier for all of the input signals. Indicates one bit of valid
         data is present on the inputs.
 
     i_dj : Signal("...", 1)
@@ -8265,7 +7938,6 @@ class RxNRZIDecoder(Module):
         Indicates the bus is currently in a SE0 state.
         Qualified by valid.
     """
-
     def __init__(self):
         self.i_valid = Signal("i_valid")
         self.i_dj = Signal("i_dj")
@@ -8281,7 +7953,7 @@ class RxNRZIDecoder(Module):
             valid = Signal("valid", 1)
             data = Signal("data", 1)
 
-            # simple state machine decodes a JK transition as a '0' and no transition as a '1'.  se0 is ignored.
+            # simple state machine decodes a JK transition as a '0' and no transition as a '1'. se0 is ignored.
             self.submodules.nrzi = nrzi = FSM()
 
             nrzi.act("DJ",
@@ -8330,10 +8002,11 @@ class RxNRZIDecoder(Module):
 
 @ResetInserter()
 class RxShifter(Module):
-    """RX Shifter
+    """
+    RX Shifter
 
     A shifter is responsible for shifting in serial bits and presenting them
-    as parallel data.  The shifter knows how many bits to shift and has
+    as parallel data. The shifter knows how many bits to shift and has
     controls for resetting the shifter.
 
     Clock Domain
@@ -8350,7 +8023,7 @@ class RxShifter(Module):
     Input Ports
     -----------
     i_valid : Signal("...", 1)
-        Qualifier for all of the input signals.  Indicates one bit of valid
+        Qualifier for all of the input signals. Indicates one bit of valid
         data is present on the inputs.
 
     i_data : Signal("...", 1)
@@ -8365,7 +8038,6 @@ class RxShifter(Module):
     o_put : Signal("...", 1)
         Asserted for one clock once the register is full.
     """
-
     def __init__(self, width):
         self.i_valid = Signal("i_valid")
         self.i_data = Signal("i_data")
@@ -8522,11 +8194,11 @@ class TxBitstuffer(Module):
     Bitstuff Insertion
 
     Long sequences of 1's would cause the receiver to lose it's lock on the
-    transmitter's clock.  USB solves this with bitstuffing.  A '0' is stuffed
+    transmitter's clock. USB solves this with bitstuffing. A '0' is stuffed
     after every 6 consecutive 1's.
 
     The TxBitstuffer is the only component in the transmit pipeline that can
-    delay transmission of serial data.  It is therefore responsible for
+    delay transmission of serial data. It is therefore responsible for
     generating the bit_strobe signal that keeps the pipe moving forward.
 
     https://www.pjrc.com/teensy/beta/usb20.pdf, USB2 Spec, 7.1.9
@@ -8549,7 +8221,6 @@ class TxBitstuffer(Module):
     o_stall : Signal("...", 1)
         Used to apply backpressure on the tx pipeline.
     """
-
     def __init__(self):
         self.i_data = Signal("i_data")
 
@@ -8611,8 +8282,8 @@ class TxNRZIEncoder(Module):
     NRZI Encode
 
     In order to ensure there are enough bit transitions for a receiver to recover
-    the clock usb uses NRZI encoding.  This module processes the incoming
-    dj, dk, se0, and valid signals and decodes them to data values.  It
+    the clock usb uses NRZI encoding. This module processes the incoming
+    dj, dk, se0, and valid signals and decodes them to data values. It
     also pipelines the se0 signal and passes it through unmodified.
 
     https://www.pjrc.com/teensy/beta/usb20.pdf, USB2 Spec, 7.1.8
@@ -8648,7 +8319,6 @@ class TxNRZIEncoder(Module):
     o_oe : Signal("...", 1)
         When asserted it indicates that the tx pipeline should be driving USB.
     """
-
     def __init__(self):
         self.i_valid = Signal("i_valid")
         self.i_oe = Signal("i_oe")
@@ -8755,7 +8425,8 @@ class TxNRZIEncoder(Module):
 @ResetInserter()
 @CEInserter()
 class TxShifter(Module):
-    """Transmit Shifter
+    """
+    Transmit Shifter
 
     TxShifter accepts parallel data and shifts it out serially.
 
@@ -8787,7 +8458,6 @@ class TxShifter(Module):
         Asserted the cycle after the shifter loads in i_data.
 
     """
-
     def __init__(self, width):
         self.i_data = Signal("i_data", width)
         self.o_get = Signal("o_get", 1)
@@ -9003,7 +8673,6 @@ class TxParallelCrcGenerator(Module):
         Current CRC value.
 
     """
-
     def __init__(self, data_width, crc_width, polynomial, initial=0):
         self.i_data_payload = Signal("i_data_payload", data_width)
         self.i_data_strobe = Signal("i_data_strobe")
@@ -9621,19 +9290,20 @@ class USBWishboneBridge(Module):
     def __init__(self, usb_core, clk_freq=12000000, magic_packet=0x43, cdc=False):
         self.wishbone = WishboneInterface()
 
-        """USB Wishbone Bridge
+        """
+        USB Wishbone Bridge
 
         This bridge provides a transparent bridge to the target device's Wishbone bus over USB.
-        It can operate without interfering with the device's USB stack.  It is simple enough to
-        be able to work even if the USB stack is not enumerated, though the host may not cooperate."""
+        It can operate without interfering with the device's USB stack. It is simple enough to
+        be able to work even if the USB stack is not enumerated, though the host may not cooperate.
 
-        """USB Wishbone Debug Protocol
+        USB Wishbone Debug Protocol
 
-        The protocol transfers four bytes a time in big-endian (i.e. USB) order.  It uses SETUP packets
-        with the special type (0x43) as an `attention` word.  This is then followed by an ``OUT`` packet.
+        The protocol transfers four bytes a time in big-endian (i.e. USB) order. It uses SETUP packets
+        with the special type (0x43) as an `attention` word. This is then followed by an ``OUT`` packet.
 
-            .. wavedrom::
-                :caption: Write to Wishbone
+            .. wavedrom:
+                Write to Wishbone
 
                 { "signal": [
                     ["Request",
@@ -9653,8 +9323,8 @@ class USBWishboneBridge(Module):
 
         To read data from the device, set the top bit of the `bRequestType`, followed by an ``IN`` packet.
 
-            .. wavedrom::
-                :caption: Read from Wishbone
+            .. wavedrom:
+                Read from Wishbone
 
                 { "signal": [
                     ['Request',
@@ -9679,7 +9349,7 @@ class USBWishboneBridge(Module):
         self.sync.usb_12 += If(byte_counter_reset, byte_counter.eq(0)).Elif(byte_counter_ce, byte_counter.eq(byte_counter + 1))
 
         # Unlike the UART or Ethernet bridges, we explicitly only support two commands: reading and writing.
-        # This gets integrated into the USB protocol, so it's not really a state.  1 is "USB Device to Host",
+        # This gets integrated into the USB protocol, so it's not really a state. 1 is "USB Device to Host",
         # and is therefore a "read", while 0 is "USB Host to Device", and is therefore a "write".
         cmd = Signal("cmd", 1, reset_less=True)
         cmd_ce = Signal("cmd_ce")
@@ -9751,7 +9421,7 @@ class USBWishboneBridge(Module):
             )
         )
 
-        # The target address comes as the wValue and wIndex in the SETUP packet.  Once we get that data, we're ready to do the operation.
+        # The target address comes as the wValue and wIndex in the SETUP packet. Once we get that data, we're ready to do the operation.
         fsm.act("RECEIVE_ADDRESS",
             self.n_debug_in_progress.eq(0),
             If(usb_core.data_recv_put,
@@ -9876,7 +9546,7 @@ class USBWishboneBridge(Module):
             ),
         )
 
-        # Send the ACK.  If the endpoint number is incorrect, go back and wait again.
+        # Send the ACK. If the endpoint number is incorrect, go back and wait again.
         fsm.act("SEND_ACK",
             self.n_debug_in_progress.eq(0),
             If(usb_core.endp != 0,
@@ -9927,14 +9597,15 @@ epout_queued: A response is queued and has yet to be acknowledged by the host
 EPIN - Requests from the host to read data from this device
 epin_data_write: Write 8 bits to the EP0 queue
 epin_data_empty: Return 1 if the queue is empty
-epin_epno: Which endpoint the data is for.  You must write this byte to indicate data is ready to be sent.
+epin_epno: Which endpoint the data is for. You must write this byte to indicate data is ready to be sent.
 epin_queued: A response is queued and has yet to be acknowledged by the host
 
 ep_stall: a 32-bit field representing endpoitns to respond with STALL.
 """
 
 class TriEndpointInterface(Module, AutoCSR):
-    """Implements a CPU interface with three FIFOs:
+    """
+    Implements a CPU interface with three FIFOs:
         * SETUP
         * IN
         * OUT
@@ -9944,17 +9615,17 @@ class TriEndpointInterface(Module, AutoCSR):
     Args
     ----
 
-    iobuf (:obj:`io.IoBuf`): PHY interface to the raw pins.  This object
+    iobuf (:obj:`io.IoBuf`): PHY interface to the raw pins. This object
         encapsulate the pin interface to the outside world so that
         `TriEndpointInterface` does not need to have platform-specific
         IO handling.
 
     debug (bool, optional): Whether to add a debug bridge to this interface.
         Adding a debug bridge generates a Wishbone Master, which can take
-        a large number of resources.  In exchange, it offers transparent debug.
+        a large number of resources. In exchange, it offers transparent debug.
 
     cdc (bool, optional): By default, ``eptri`` assumes that the CSR bus is in
-        the same 12 MHz clock domain as the USB stack.  If ``cdc`` is set to
+        the same 12 MHz clock domain as the USB stack. If ``cdc`` is set to
         True, then additional buffers will be placed on the ``.we`` and ``.re``
         lines to handle this difference.
 
@@ -9965,13 +9636,13 @@ class TriEndpointInterface(Module, AutoCSR):
         If `debug=True`, this attribute will contain the Wishbone Interface
         master for you to connect to your desired Wishbone bus.
     """
-
     def __init__(self, iobuf, debug=False, cdc=False):
 
-        """USB Device Tri-FIFO
+        """
+        USB Device Tri-FIFO
 
-        This is a three-FIFO USB device.  It presents one FIFO each for ``IN``, ``OUT``,
-        and ``SETUP`` data.  This allows for up to 16 ``IN`` and 16 ``OUT`` endpoints
+        This is a three-FIFO USB device. It presents one FIFO each for ``IN``, ``OUT``,
+        and ``SETUP`` data. This allows for up to 16 ``IN`` and 16 ``OUT`` endpoints
         without sacrificing many FPGA resources.
 
         USB supports four types of transfers: control, bulk, interrupt, and isochronous.
@@ -9979,12 +9650,13 @@ class TriEndpointInterface(Module, AutoCSR):
         other types of transfers.
         """
 
-        """Interrupt and Bulk Transfers
+        """
+        Interrupt and Bulk Transfers
 
         Interrupt and bulk transfers are similar from an implementation standpoint --
         they differ only in terms of how often they are transmitted.
 
-        These transfers can be made to any endpoint, and may even be interleaved.  However,
+        These transfers can be made to any endpoint, and may even be interleaved. However,
         due to the nature of ``TriEndpointInterface`` any attempt by the host to interleave
         transfers will result in a ``NAK``, and the host will retry later when the buffer
         is empty.
@@ -9993,12 +9665,12 @@ class TriEndpointInterface(Module, AutoCSR):
         ^^^^^^^^^^^^
 
         To make an ``IN`` transfer (i.e. to send data to the host), write the data to
-        ``IN_DATA``.  This is a FIFO, and each write to this endpoint will advance the
-        FIFO pointer automatically.  This FIFO is 64 bytes deep.  USB ``DATA`` packets
+        ``IN_DATA``. This is a FIFO, and each write to this endpoint will advance the
+        FIFO pointer automatically. This FIFO is 64 bytes deep. USB ``DATA`` packets
         contain a CRC16 checksum, which is automatically added to any ``IN`` transfers.
 
         ``TriEndpointInterface`` will continue to respond ``NAK`` until you arm the buffer.
-        Do this by writing the endpoint number to ``IN_CTRL.EPNO``.  This will tell the device
+        Do this by writing the endpoint number to ``IN_CTRL.EPNO``. This will tell the device
         that it should send the data the next time the host asks for it.
 
         Once the data has been transferred, the device will raise an interrupt and you
@@ -10014,20 +9686,20 @@ class TriEndpointInterface(Module, AutoCSR):
 
         To respond to an ``OUT`` transfer (i.e. to receive data from the host), enable
         a particular endpoint by writing to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.ENABLE``
-        bit set.  This will tell the device to stop responding ``NAK`` to that particular
+        bit set. This will tell the device to stop responding ``NAK`` to that particular
         endpoint and to accept any incoming data into a 66-byte FIFO, provided the FIFO
         is empty.
 
         Once the host sends data, an interrupt will be raised and that particular endpoint's
-        ``ENABLE`` will be set to ``0``.  This prevents any additional data from entering
+        ``ENABLE`` will be set to ``0``. This prevents any additional data from entering
         the FIFO while the device examines the data.
 
         The FIFO will contain two extra bytes, which are the two-byte CRC16 of the packet.
-        You can safely discard these bytes.  Because of this, a zero-byte transfer will
+        You can safely discard these bytes. Because of this, a zero-byte transfer will
         be two-bytes, and a full 64-byte transfer will be 66 bytes.
 
         To determine which endpoint the ``OUT`` packet was sent to, refer to
-        ``OUT_STATUS.EPNO``.  This field is only updated when a successful packet is received,
+        ``OUT_STATUS.EPNO``. This field is only updated when a successful packet is received,
         and will not change until the ``OUT`` FIFO is re-armed.
 
         The ``OUT`` FIFO will continue to respond to the host with with ``NAK`` until the
@@ -10038,32 +9710,33 @@ class TriEndpointInterface(Module, AutoCSR):
         to ``OUT_CTRL``.
         """
 
-        """Control Transfers
+        """
+        Control Transfers
 
         Control transfers are complicated, and are the first sort of transfer that
-        the host uses.  Such transfers have three distinct phases.
+        the host uses. Such transfers have three distinct phases.
 
         The first phase is the ``SETUP`` phase, where the host sends an 8-byte ``SETUP``
-        packet.  These ``SETUP`` packets must always be acknowledged, so any such packet
+        packet. These ``SETUP`` packets must always be acknowledged, so any such packet
         from the host will get loaded into the ``SETUP`` FIFO immediately, and an interrupt
-        event raised.  If, for some reason, the device hasn't drained this ``SETUP``
+        event raised. If, for some reason, the device hasn't drained this ``SETUP``
         FIFO from a previous transaction, the FIFO will be cleared automatically.
 
         Once the ``SETUP`` packet is handled, the host will send an ``IN`` or ``OUT``
-        packet.  If the host sends an ``OUT`` packet, then the ``OUT`` buffer must be
+        packet. If the host sends an ``OUT`` packet, then the ``OUT`` buffer must be
         cleared, the ``OUT.DONE`` interrupt handled, and the ``OUT_CTRL.ENABLE`` bit
-        must be set for the appropriate endpoint, usually EP0.  The device will not
+        must be set for the appropriate endpoint, usually EP0. The device will not
         accept any data as long as these three conditions are not met.
 
         If the host sends an ``IN`` packet, the device will respond with ``NAK`` if
-        no data has queued.  To queue data, fill the ``IN_DATA`` buffer, then write
+        no data has queued. To queue data, fill the ``IN_DATA`` buffer, then write
         ``0`` to ``IN_CTRL``.
 
         You can continue to fill the buffer (for ``IN`` packets) or drain the buffer
         and re-enable the endpoint (for ``OUT`` packets) until the host has finished
         the transfer.
 
-        When the host has finished, it will send the opposite packet type.  If it
+        When the host has finished, it will send the opposite packet type. If it
         is making ``IN`` transfers, it will send a single ``OUT`` packet, or if it
         is making ``OUT`` transfers it will send a single ``IN`` packet.
         You must handle this transaction yourself.
@@ -10078,15 +9751,15 @@ class TriEndpointInterface(Module, AutoCSR):
         will clear the ``STALL`` state for the specified endpoint (usually EP0).
 
         To set or clear the ``STALL`` bit of an ``IN`` endpoint, write its endpoint number
-        to ``IN_CTRL.EPNO`` with the ``IN_CTRL.STALL`` bit either set or clear.  If
+        to ``IN_CTRL.EPNO`` with the ``IN_CTRL.STALL`` bit either set or clear. If
         this bit is set, then the device will respond to the next ``IN`` packet from the
-        host to that particular endpoint with ``STALL``.  If the bit is clear, then
+        host to that particular endpoint with ``STALL``. If the bit is clear, then
         the next ``IN`` packet will be responded to with ``ACK`` and the contents of
         the ``IN`` FIFO.
 
         To stall an ``OUT`` endpoint, write to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.STALL``
-        bit set.  To unstall, write to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.STALL`` bit
-        cleared.  Note that ``OUT_CTRL.ENABLE`` should not be set at the same time as
+        bit set. To unstall, write to ``OUT_CTRL.EPNO`` with the ``OUT_CTRL.STALL`` bit
+        cleared. Note that ``OUT_CTRL.ENABLE`` should not be set at the same time as
         ``OUT_CTRL.STALL``, as this will cause a conflict.
         """
 
@@ -10110,28 +9783,19 @@ class TriEndpointInterface(Module, AutoCSR):
 
         # When the USB host sends a USB reset, set our address back to 0.
         self.address = ResetInserter()(CSRStorage("address",
-            fields=[CSRField("addr", 7, description="Write the USB address from USB ``SET_ADDRESS`` packets.")],
-            description="""
-                Sets the USB device address, in order to ignore packets
-                going to other devices on the bus. This value is reset when the host
-                issues a USB Device Reset condition.
-            """))
+            fields=[CSRField("addr", 7)], # Write the USB address from USB ``SET_ADDRESS`` packets
+          )) # Sets the USB device address, in order to ignore packets going to other devices on the bus. This value is reset when the host issues a USB Device Reset condition.
         self.comb += self.address.reset.eq(usb_core.usb_reset)
 
+        # In ``eptri``, there are three endpoints. It is possible for an IRQ to fire and have all three bits set. Under these circumstances it can be difficult to know which event
+        # to process first. Use this register to determine which event needs to be processed first. Only one bit will ever be set at a time.
         self.next_ev = CSRStatus("next_ev",
             fields=[
-                CSRField("in", 1, description="``1`` if the next event is an ``IN`` event"),
-                CSRField("out", 1, description="``1`` if the next event is an ``OUT`` event"),
-                CSRField("setup", 1, description="``1`` if the next event is an ``SETUP`` event"),
-                CSRField("reset", 1, description="``1`` if the next event is a ``RESET`` event"),
+                CSRField("in", 1),
+                CSRField("out", 1),
+                CSRField("setup", 1),
+                CSRField("reset", 1),
             ],
-            description="""
-                In ``eptri``, there are three endpoints.  It is possible for an IRQ to fire
-                and have all three bits set.  Under these circumstances it can be difficult
-                to know which event to process first.  Use this register to determine which
-                event needs to be processed first.
-                Only one bit will ever be set at a time.
-            """,
         )
 
         # Handlers
@@ -10256,7 +9920,7 @@ class TriEndpointInterface(Module, AutoCSR):
                 usb_core.sta.eq(in_handler.stalled),
                 usb_core.arm.eq(in_handler.response),
 
-                # After an IN transfer, the host sends an OUT packet.  We must ACK this and then return to IDLE.
+                # After an IN transfer, the host sends an OUT packet. We must ACK this and then return to IDLE.
                 If(usb_core.end, NextState("IDLE"), ),
             ),
         )
@@ -10270,7 +9934,7 @@ class TriEndpointInterface(Module, AutoCSR):
                 usb_core.sta.eq(out_handler.stalled),
                 usb_core.arm.eq(out_handler.response),
 
-                # After an OUT transfer, the host sends an IN packet.  We must ACK this and then return to IDLE.
+                # After an OUT transfer, the host sends an IN packet. We must ACK this and then return to IDLE.
                 If(usb_core.end, NextState("IDLE"), ),
             ),
         )
@@ -10278,16 +9942,17 @@ class TriEndpointInterface(Module, AutoCSR):
         self.comb += usb_core.reset.eq(usb_core.error | usb_core_reset)
 
 class SetupHandler(Module, AutoCSR):
-    """Handle ``SETUP`` packets
+    """
+    Handle ``SETUP`` packets
 
-    ``SETUP`` packets must always respond with ``ACK``.  They are followed by a ``DATA0``
+    ``SETUP`` packets must always respond with ``ACK``. They are followed by a ``DATA0``
     packet, and may be followed by additional DATA stages.
 
     Since SETUP packets must always be handled, there is a separate FIFO that
-    handles this data.  Hence the name `eptri`.
+    handles this data. Hence the name `eptri`.
 
     The device must always acknowledge the ``SETUP`` packet right away, but need
-    not send the acknowledgement stage right away.  You can use this to parse
+    not send the acknowledgement stage right away. You can use this to parse
     the data at a leisurely pace.
 
     When the device receives a ``SETUP`` transaction, an interrupt will fire
@@ -10299,11 +9964,11 @@ class SetupHandler(Module, AutoCSR):
     ----------
 
     reset : Signal
-        Asserting this resets the entire SetupHandler object.  You should do this at boot, or if
+        Asserting this resets the entire SetupHandler object. You should do this at boot, or if
         you're switching applications.
 
     begin : Signal
-        Assert this when a ``SETUP`` token is received.  This will clear out the current buffer
+        Assert this when a ``SETUP`` token is received. This will clear out the current buffer
         (if any) and prepare the endpoint to receive data.
 
     epno : Signal("...", 4)
@@ -10317,7 +9982,6 @@ class SetupHandler(Module, AutoCSR):
         that a USB reset has occurred.
 
     """
-
     def __init__(self, usb_core):
 
         self.reset = Signal("reset")
@@ -10327,29 +9991,31 @@ class SetupHandler(Module, AutoCSR):
 
         # Register Interface
         self.data = data = CSRStatus("data",
-            fields=[CSRField("data", 8, description="The next byte of ``SETUP`` data")],
-            description="Data from the last ``SETUP`` transactions.  It will be 10 bytes long, because it will include the CRC16.  This is a FIFO, and the queue is advanced automatically."
+            fields=[CSRField("data", 8)], # The next byte of ``SETUP`` data
+            # Data from the last ``SETUP`` transactions. It will be 10 bytes long, because it will include the CRC16. This is a FIFO, and the queue is advanced automatically.
         )
 
+        # Controls for managing how to handle ``SETUP`` transactions
         self.ctrl = ctrl = CSRStorage("ctrl",
-            fields=[CSRField("reset", offset=5, description="Write a ``1`` here to reset the `SETUP` handler.", pulse=True), ],
-            description="Controls for managing how to handle ``SETUP`` transactions."
+            fields=[
+                CSRField("reset", offset=5, pulse=True), # Write a ``1`` here to reset the `SETUP` handler
+            ],
         )
 
+       # Status about the most recent ``SETUP`` transactions, and the state of the FIFO
         self.status = status = CSRStatus("status",
             fields=[
-                CSRField("epno", 4, description="The destination endpoint for the most recent SETUP token."),
-                CSRField("have", description="``1`` if there is data in the FIFO."),
-                CSRField("pend", description="``1`` if there is an IRQ pending."),
-                CSRField("is_in", description="``1`` if an IN stage was detected."),
-                CSRField("data", description="``1`` if a DATA stage is expected."),
+                CSRField("epno", 4), # The destination endpoint for the most recent SETUP token.
+                CSRField("have"),    # ``1`` if there is data in the FIFO.
+                CSRField("pend"),    # ``1`` if there is an IRQ pending.
+                CSRField("is_in"),   # ``1`` if an IN stage was detected.
+                CSRField("data"),    # ``1`` if a DATA stage is expected.
             ],
-            description="Status about the most recent ``SETUP`` transactions, and the state of the FIFO."
         )
 
         self.submodules.ev = EventManager()
-        self.ev.submodules.packet = EventSourcePulse(name="ready", description="Indicates a ``SETUP`` packet has arrived and is waiting in the ``SETUP`` FIFO.")
-        self.ev.submodules.reset = EventSourceProcess(name="reset", description="Indicates a USB ``RESET`` condition has occurred, and the ``ADDRESS`` is now ``0``.")
+        self.ev.submodules.packet = EventSourcePulse(name="ready")  # Indicates a ``SETUP`` packet has arrived and is waiting in the ``SETUP`` FIFO
+        self.ev.submodules.reset = EventSourceProcess(name="reset") # Indicates a USB ``RESET`` condition has occurred, and the ``ADDRESS`` is now ``0``
         self.ev.finalize()
         self.trigger = trigger = self.ev.packet.trigger
         self.pending = pending = self.ev.packet.pending
@@ -10432,14 +10098,15 @@ class SetupHandler(Module, AutoCSR):
         self.empty = inner.empty
 
 class InHandler(Module, AutoCSR):
-    """Endpoint for Device->Host transactions.
+    """
+    Endpoint for Device->Host transactions
 
-    When a host requests data from a device, it sends an ``IN`` token.  The device
-    should then respond with ``DATA0`, ``DATA1``, or ``NAK``.  This handler is
+    When a host requests data from a device, it sends an ``IN`` token. The device
+    should then respond with ``DATA0`, ``DATA1``, or ``NAK``. This handler is
     responsible for managing this response, as well as supplying the USB system
     with data.
 
-    To send data, fill the FIFO by writing bytes to ``IN_DATA``.  When you're ready
+    To send data, fill the FIFO by writing bytes to ``IN_DATA``. When you're ready
     to transmit, write the destination endpoint number to ``IN_CTRL``.
 
     Attributes
@@ -10458,35 +10125,36 @@ class InHandler(Module, AutoCSR):
         self.submodules.data_buf = buf = ResetInserter()(_SyncFIFOBuffered(width=8, depth=64))
 
         self.data = CSRStorage("data",
-            fields=[CSRField("data", 8, description="The next byte to add to the queue."), ],
-            description="""
-                Each byte written into this register gets added to an outgoing FIFO.
-                Any bytes that are written here will be transmitted in the order in which they were added.
-                The FIFO queue is automatically advanced with each write.
-                The FIFO queue is 64 bytes deep.
-                If you exceed this amount, the result is undefined."""
+            fields=[
+                CSRField("data", 8), # The next byte to add to the queue
+            ],
+            # Each byte written into this register gets added to an outgoing FIFO.
+            # Any bytes that are written here will be transmitted in the order in which they were added.
+            # The FIFO queue is automatically advanced with each write.
+            # The FIFO queue is 64 bytes deep.
+            # If you exceed this amount, the result is undefined.
         )
 
+        # Enables transmission of data in response to ``IN`` tokens, or resets the contents of the FIFO
         self.ctrl = ctrl = CSRStorage("ctrl",
             fields=[
-                CSRField("epno", 4, description="The endpoint number for the transaction that is queued in the FIFO."),
-                CSRField("reset", offset=5, description="Write a ``1`` here to clear the contents of the FIFO.", pulse=True),
-                CSRField("stall", description="Write a ``1`` here to stall the EP written in ``EP``.", pulse=True),
+                CSRField("epno", 4),                     # The endpoint number for the transaction that is queued in the FIFO
+                CSRField("reset", offset=5, pulse=True), # Write a ``1`` here to clear the contents of the FIFO
+                CSRField("stall", pulse=True),           # Write a ``1`` here to stall the EP written in ``EP``
             ],
-            description="Enables transmission of data in response to ``IN`` tokens, or resets the contents of the FIFO."
         )
 
+        # Status about the IN handler. As soon as you write to `IN_DATA`, ``IN_STATUS.HAVE`` should go to ``1``
         self.status = CSRStatus("status",
             fields=[
-                CSRField("idle", description="This value is ``1`` if the packet has finished transmitting."),
-                CSRField("have", offset=4, description="This value is ``0`` if the FIFO is empty."),
-                CSRField("pend", offset=5, description="``1`` if there is an IRQ pending."),
+                CSRField("idle"),           # This value is ``1`` if the packet has finished transmitting
+                CSRField("have", offset=4), # This value is ``0`` if the FIFO is empty
+                CSRField("pend", offset=5), # ``1`` if there is an IRQ pending
             ],
-            description="Status about the IN handler.  As soon as you write to `IN_DATA`, ``IN_STATUS.HAVE`` should go to ``1``."
         )
 
         self.submodules.ev = EventManager()
-        self.ev.submodules.packet = EventSourcePulse(name="done", description="Indicates that the host has successfully transferred an ``IN`` packet, and that the FIFO is now empty.")
+        self.ev.submodules.packet = EventSourcePulse(name="done") # Indicates that the host has successfully transferred an ``IN`` packet, and that the FIFO is now empty
         self.ev.finalize()
 
         # Control bits
@@ -10518,7 +10186,7 @@ class InHandler(Module, AutoCSR):
         queued = Signal("queued")
         was_queued = Signal("was_queued")
 
-        # This goes to "1" when "queued" is 1 when a "start" occurs.  It is used
+        # This goes to "1" when "queued" is 1 when a "start" occurs. It is used
         # to avoid skipping packets when a packet is queued during a transmission.
         transmitted = Signal("transmitted")
 
@@ -10592,15 +10260,15 @@ class InHandler(Module, AutoCSR):
 
 class OutHandler(Module, AutoCSR):
     """
-    Endpoint for Host->Device transaction
+    Endpoint for Host->Device transactions
 
-    When a host wants to send data to a device, it sends an ``OUT`` token.  The device
-    should then respond with ``ACK``, or ``NAK``.  This handler is responsible for managing
+    When a host wants to send data to a device, it sends an ``OUT`` token. The device
+    should then respond with ``ACK``, or ``NAK``. This handler is responsible for managing
     this response, as well as reading data from the USB subsystem.
 
     To enable receiving data, write a ``1`` to the ``OUT_CTRL.ENABLE`` bit.
 
-    To drain the FIFO, read from ``OUT.DATA``.  Don't forget to re-
+    To drain the FIFO, read from ``OUT.DATA``. Don't forget to re-
     enable the FIFO by ensuring ``OUT_CTRL.ENABLE`` is set after advancing the FIFO!
 
     Attributes
@@ -10611,43 +10279,40 @@ class OutHandler(Module, AutoCSR):
 
         self.submodules.data_buf = buf = ResetInserter()(_SyncFIFOBuffered(width=8, depth=66))
 
+        # Data received from the host will go into a FIFO.
+        # This register reflects the contents of the top byte in that FIFO.
+        # Reading from this register advances the FIFO pointer.
         self.data = data = CSRStatus("data",
             fields=[
-                CSRField("data", 8, description="The top byte of the receive FIFO."),
+                CSRField("data", 8), # The top byte of the receive FIFO
             ],
-            description="""
-                Data received from the host will go into a FIFO.
-                This register reflects the contents of the top byte in that FIFO.
-                Reading from this register advances the FIFO pointer."""
         )
 
+        # Controls for receiving packet data. To enable an endpoint, write its value to ``epno``,
+        # with the ``enable`` bit set to ``1`` to enable an endpoint, or ``0`` to disable it.
+        # Resetting the OutHandler will set all ``enable`` bits to 0.
+        # Similarly, you can adjust the ``STALL`` state by setting or clearing the ``stall`` bit.
         self.ctrl = ctrl = CSRStorage("ctrl",
             fields=[
-                CSRField("epno", 4, description="The endpoint number to update the ``enable`` and ``status`` bits for."),
-                CSRField("enable", description="Write a ``1`` here to enable receiving data"),
-                CSRField("reset", pulse=True, description="Write a ``1`` here to reset the ``OUT`` handler"),
-                CSRField("stall", description="Write a ``1`` here to stall an endpoint"),
+                CSRField("epno", 4),           # The endpoint number to update the ``enable`` and ``status`` bits for
+                CSRField("enable"),            # Write a ``1`` here to enable receiving data
+                CSRField("reset", pulse=True), # Write a ``1`` here to reset the ``OUT`` handler
+                CSRField("stall"),             # Write a ``1`` here to stall an endpoint
             ],
-            description="""
-                Controls for receiving packet data.  To enable an endpoint, write its value to ``epno``,
-                with the ``enable`` bit set to ``1`` to enable an endpoint, or ``0`` to disable it.
-                Resetting the OutHandler will set all ``enable`` bits to 0.
-
-                Similarly, you can adjust the ``STALL`` state by setting or clearing the ``stall`` bit."""
         )
 
+        # Status about the current state of the `OUT` endpoint
         self.status = CSRStatus("status",
             fields=[
-                CSRField("epno", 4, description="The destination endpoint for the most recent ``OUT`` packet."),
-                CSRField("have", description="``1`` if there is data in the FIFO."),
-                CSRField("pend", description="``1`` if there is an IRQ pending."),
+                CSRField("epno", 4), # The destination endpoint for the most recent ``OUT`` packet.
+                CSRField("have"),    # ``1`` if there is data in the FIFO.
+                CSRField("pend"),    # ``1`` if there is an IRQ pending.
             ],
-            description="Status about the current state of the `OUT` endpoint."
         )
 
         self.submodules.ev = EventManager()
-        self.ev.submodules.packet = EventSourcePulse(name="done", description="""
-            Indicates that an ``OUT`` packet has successfully been transferred from the host.  This bit must be cleared in order to receive additional packets.""")
+        # Indicates that an ``OUT`` packet has successfully been transferred from the host. This bit must be cleared in order to receive additional packets.
+        self.ev.submodules.packet = EventSourcePulse(name="done")
         self.ev.finalize()
 
         self.usb_reset = Signal("usb_reset")
@@ -10776,7 +10441,7 @@ class CSRTransform(ModuleTransformer):
                 c.sync += c.re0.eq(c.re)
 
                 if hasattr(c, "fields"):
-                    setattr(c, "dat_w", Record([]))
+                    setattr(c, "dat_w", Record("dat_w", []))
                     for a in c.fields.fields:
                         s = Signal(c.name + "_" + a.name + "0", a.size)
 
@@ -10788,12 +10453,12 @@ class CSRTransform(ModuleTransformer):
                     c.sync += If(c.re, c.storage.eq(c.dat_w))
 
 class CDCUsb(Module, AutoCSR):
-    """DummyUSB Self-Enumerating USB Controller
+    """
+    DummyUSB Self-Enumerating USB Controller
 
     This implements a device that simply responds to the most common SETUP packets.
     It is intended to be used alongside the Wishbone debug bridge.
     """
-
     def __init__(self, iobuf, debug=False, vid=0x1209, pid=0x5bf2, product="OrangeCrab CDC", manufacturer="GsD"):
 
         self.submodules.phy = phy = ClockDomainsRenamer("usb_12")(CDCUsbPHY(iobuf, debug=debug, vid=vid, pid=pid, product=product, manufacturer=manufacturer))
@@ -10812,8 +10477,8 @@ class CDCUsb(Module, AutoCSR):
 
         self._configured = CSR("configured")
 
-        self.sink   = Endpoint([("data", 8)])
-        self.source = Endpoint([("data", 8)])
+        self.sink   = Endpoint("sink", [("data", 8)])
+        self.source = Endpoint("source", [("data", 8)])
 
         self.rts = Signal("rts")
         self.dtr = Signal("dtr")
@@ -10865,12 +10530,12 @@ class CDCUsb(Module, AutoCSR):
         ]
 
 class CDCUsbPHY(Module):
-    """DummyUSB Self-Enumerating USB Controller
+    """
+    DummyUSB Self-Enumerating USB Controller
 
     This implements a device that simply responds to the most common SETUP packets.
     It is intended to be used alongside the Wishbone debug bridge.
     """
-
     def __init__(self, iobuf, debug, vid, pid, product, manufacturer):
 
         # Create the eptri USB interface
@@ -10878,8 +10543,8 @@ class CDCUsbPHY(Module):
         #usb.finalize()
         self.submodules.eptri = usb = CSRTransform(self)(usb)
 
-        self.sink   = Endpoint([("data", 8)])
-        self.source = Endpoint([("data", 8)])
+        self.sink   = Endpoint("sink", [("data", 8)])
+        self.source = Endpoint("source", [("data", 8)])
 
         self.rts = Signal("rts")
         self.dtr = Signal("dtr")
@@ -11754,13 +11419,13 @@ class SoCController(Module, AutoCSR):
     def __init__(self, with_reset = True, with_scratch = True, with_errors = True):
 
         if with_reset:
-            self._reset = CSRStorage("reset", 1, description="""Write a ``1`` to this register to reset the SoC.""")
+            self._reset = CSRStorage("reset", 1) # Write a ``1`` to this register to reset the SoC
         if with_scratch:
-            self._scratch = CSRStorage("scratch", 32, reset=0x12345678, description="""
-                Use this register as a scratch space to verify that software read/write accesses to the Wishbone/CSR bus are working correctly.
-                The initial reset value of 0x1234578 can be used to verify endianness.""")
+            # Use this register as a scratch space to verify that software read/write accesses to the Wishbone/CSR bus are working correctly.
+            # The initial reset value of 0x1234578 can be used to verify endianness.
+            self._scratch = CSRStorage("scratch", 32, reset=0x12345678)
         if with_errors:
-            self._bus_errors = CSRStatus("bus_errors", 32, description="Total number of Wishbone bus errors (timeouts) since start.")
+            self._bus_errors = CSRStatus("bus_errors", 32) # Total number of Wishbone bus errors (timeouts) since start
 
         # Reset
         if with_reset:
@@ -11956,7 +11621,7 @@ class LatticeECP5AsyncResetSynchronizer:
 
 class LatticeECP5TrellisTristateImpl(Module):
     def __init__(self, io, o, oe, i):
-        nbits, sign = value_bits_sign(io)
+        nbits, _ = value_bits_sign(io)
         for bit in range(nbits):
             self.specials += Instance("TRELLIS_IO",
                 p_DIR = "BIDIR",
@@ -12142,7 +11807,7 @@ class ConstraintManager:
         if isinstance(rt, int):
             obj = Signal(resource_name, rt)
         else:
-            obj = Record(rt, name=resource_name)
+            obj = Record(resource_name, rt)
             for name, inverted in ri:
                 if inverted:
                     getattr(obj, name).inverted = True
@@ -12401,7 +12066,8 @@ class CRG(Module):
         usb_pll.create_clkout(self.cd_usb_12, 12e6)
 
 class Timer(Module, AutoCSR):
-    """Timer
+    """
+    Timer
 
     Provides a generic Timer core.
 
@@ -12435,18 +12101,17 @@ class Timer(Module, AutoCSR):
     For both modes, the CPU can be advertised by an IRQ that the duration/period has elapsed. (The
     CPU can also do software polling with ``update_value`` and ``value`` to know the elapsed duration)
     """
-
     def __init__(self, width=32):
-        self._load = CSRStorage("load", width, description="""Load value when Timer is (re-)enabled.
-            In One-Shot mode, the value written to this register specifies the Timer's duration in clock cycles.""")
-        self._reload = CSRStorage("reload", width, description="""Reload value when Timer reaches ``0``.
-            In Periodic mode, the value written to this register specify the Timer's period in clock cycles.""")
-        self._en = CSRStorage("en", 1, description="""Enable flag of the Timer.
-            Set this flag to ``1`` to enable/start the Timer.  Set to ``0`` to disable the Timer.""")
-        self._update_value = CSRStorage("update_value", 1, description="""Update trigger for the current countdown value.
-            A write to this register latches the current countdown value to ``value`` register.""")
-        self._value = CSRStatus("value", width, description="""Latched countdown value.
-            This value is updated by writing to ``update_value``.""")
+        # Load value when Timer is (re-)enabled. In One-Shot mode, the value written to this register specifies the Timer's duration in clock cycles.
+        self._load = CSRStorage("load", width)
+        # Reload value when Timer reaches ``0``. In Periodic mode, the value written to this register specify the Timer's period in clock cycles.
+        self._reload = CSRStorage("reload", width)
+        # Enable flag of the Timer. Set this flag to ``1`` to enable/start the Timer. Set to ``0`` to disable the Timer.
+        self._en = CSRStorage("en", 1)
+        # Update trigger for the current countdown value. A write to this register latches the current countdown value to ``value`` register.
+        self._update_value = CSRStorage("update_value", 1)
+        # Latched countdown value. This value is updated by writing to ``update_value``.
+        self._value = CSRStatus("value", width)
 
         self.submodules.ev = EventManager()
         self.ev.zero       = EventSourceProcess()
