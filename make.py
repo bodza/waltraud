@@ -152,7 +152,7 @@ def _get_csr_header(regions, constants, csr_base=None, with_access_functions=Tru
     return r
 
 class Builder:
-    def __init__(self, soc, output_dir="build", compile_gateware=True):
+    def __init__(self, soc, output_dir="build"):
         self.soc = soc
 
         self.output_dir = os.path.abspath(output_dir)
@@ -161,8 +161,6 @@ class Builder:
         self.software_dir  = os.path.join(self.output_dir,   "software")
         self.include_dir   = os.path.join(self.software_dir, "include")
         self.generated_dir = os.path.join(self.include_dir,  "generated")
-
-        self.compile_gateware = compile_gateware
 
         self.software_packages = []
         for name in [ "libcompiler_rt", "libbase", "liblitedram", "bios" ]:
@@ -213,7 +211,7 @@ class Builder:
         bios_data = _get_mem_data(bios_file, self.soc.cpu.endianness)
         self.soc.initialize_rom(bios_data)
 
-    def build(self, **kwargs):
+    def build(self, build_name, run):
         os.makedirs(self.gateware_dir, exist_ok=True)
         os.makedirs(self.software_dir, exist_ok=True)
 
@@ -225,9 +223,7 @@ class Builder:
         self._generate_rom_software()
         self._initialize_rom_software()
 
-        if "run" not in kwargs:
-            kwargs["run"] = self.compile_gateware
-        vns = self.soc.build(build_dir=self.gateware_dir, **kwargs)
+        vns = self.soc.build(self.gateware_dir, build_name, run)
         self.soc.do_exit(vns=vns)
         return vns
 
@@ -249,7 +245,7 @@ def main():
 
     soc = Waltraud()
 
-    Builder(soc).build(build_name="waltraud", run=args.build)
+    Builder(soc).build("waltraud", args.build)
 
     if args.load:
         DFUProg(vid="1209", pid="5af0").load_bitstream("build/gateware/waltraud")
