@@ -2,17 +2,17 @@
 `timescale 1 ns / 1 ps
 
 module picorv32 #(
-    parameter [ 0:0] LATCHED_MEM_RDATA = 0,
-    parameter [ 0:0] TWO_STAGE_SHIFT = 0,
-    parameter [ 0:0] BARREL_SHIFTER = 0,
-    parameter [ 0:0] TWO_CYCLE_COMPARE = 0,
-    parameter [ 0:0] TWO_CYCLE_ALU = 0,
-    parameter [ 0:0] CATCH_MISALIGN = 0,
-    parameter [ 0:0] CATCH_ILLINSN = 1,
-    parameter [ 0:0] ENABLE_IRQ = 1,
-    parameter [ 0:0] ENABLE_IRQ_QREGS = 1,
-    parameter [ 0:0] ENABLE_IRQ_TIMER = 0,
-    parameter [ 0:0] REGS_INIT_ZERO = 0,
+    parameter        LATCHED_MEM_RDATA = 0,
+    parameter        TWO_STAGE_SHIFT = 0,
+    parameter        BARREL_SHIFTER = 0,
+    parameter        TWO_CYCLE_COMPARE = 0,
+    parameter        TWO_CYCLE_ALU = 0,
+    parameter        CATCH_MISALIGN = 0,
+    parameter        CATCH_ILLINSN = 1,
+    parameter        ENABLE_IRQ = 1,
+    parameter        ENABLE_IRQ_QREGS = 1,
+    parameter        ENABLE_IRQ_TIMER = 0,
+    parameter        REGS_INIT_ZERO = 0,
     parameter [31:0] MASKED_IRQ = 32'h 00000000,
     parameter [31:0] LATCHED_IRQ = 32'h ffffffff,
     parameter [31:0] PROGADDR_RESET = 32'h 00000000,
@@ -40,11 +40,7 @@ module picorv32 #(
 
     // IRQ Interface
     input      [31:0] irq,
-    output reg [31:0] eoi,
-
-    // Trace Interface
-    output reg        trace_valid,
-    output reg [35:0] trace_data
+    output reg [31:0] eoi
 );
     localparam integer irq_timer = 0;
     localparam integer irq_ebreak = 1;
@@ -88,22 +84,15 @@ module picorv32 #(
     reg mem_do_rdata;
     reg mem_do_wdata;
 
-    wire mem_xfer;
+    wire mem_xfer = mem_valid && mem_ready;
 
-    reg [15:0] mem_16bit_buffer;
-
-    wire [31:0] mem_rdata_latched;
-
-    assign mem_xfer = mem_valid && mem_ready;
-
-    wire mem_busy = |{mem_do_prefetch, mem_do_rinst, mem_do_rdata, mem_do_wdata};
     wire mem_done = resetn && ((mem_xfer && |mem_state && (mem_do_rinst || mem_do_rdata || mem_do_wdata)) || (&mem_state && mem_do_rinst));
 
     assign mem_la_write = resetn && !mem_state && mem_do_wdata;
     assign mem_la_read = resetn && (!mem_state && (mem_do_rinst || mem_do_prefetch || mem_do_rdata));
     assign mem_la_addr = (mem_do_prefetch || mem_do_rinst) ? {next_pc[31:2], 2'b00} : {reg_op1[31:2], 2'b00};
 
-    assign mem_rdata_latched = (mem_xfer || LATCHED_MEM_RDATA) ? mem_rdata : mem_rdata_q;
+    wire [31:0] mem_rdata_latched = (mem_xfer || LATCHED_MEM_RDATA) ? mem_rdata : mem_rdata_q;
 
     always @* begin
         (* full_case *)
@@ -199,7 +188,13 @@ module picorv32 #(
     reg instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and;
     reg instr_ecall_ebreak;
     reg instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer;
-    wire instr_trap;
+
+    wire instr_trap = CATCH_ILLINSN && !{instr_lui, instr_auipc, instr_jal, instr_jalr,
+            instr_beq, instr_bne, instr_blt, instr_bge, instr_bltu, instr_bgeu,
+            instr_lb, instr_lh, instr_lw, instr_lbu, instr_lhu, instr_sb, instr_sh, instr_sw,
+            instr_addi, instr_slti, instr_sltiu, instr_xori, instr_ori, instr_andi, instr_slli, instr_srli, instr_srai,
+            instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and,
+            instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer};
 
     reg [regindex_bits-1:0] decoded_rd, decoded_rs1, decoded_rs2;
     reg [31:0] decoded_imm, decoded_imm_j;
@@ -222,32 +217,6 @@ module picorv32 #(
     reg is_alu_reg_imm;
     reg is_alu_reg_reg;
     reg is_compare;
-
-    assign instr_trap = CATCH_ILLINSN && !{instr_lui, instr_auipc, instr_jal, instr_jalr,
-            instr_beq, instr_bne, instr_blt, instr_bge, instr_bltu, instr_bgeu,
-            instr_lb, instr_lh, instr_lw, instr_lbu, instr_lhu, instr_sb, instr_sh, instr_sw,
-            instr_addi, instr_slti, instr_sltiu, instr_xori, instr_ori, instr_andi, instr_slli, instr_srli, instr_srai,
-            instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and,
-            instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer};
-
-    reg [31:0] cached_insn_imm;
-    reg [31:0] cached_insn_opcode;
-    reg [4:0] cached_insn_rs1;
-    reg [4:0] cached_insn_rs2;
-    reg [4:0] cached_insn_rd;
-
-    always @(posedge clk) begin
-        if (decoder_trigger_q) begin
-            cached_insn_imm <= decoded_imm;
-            if (&next_insn_opcode[1:0])
-                cached_insn_opcode <= next_insn_opcode;
-            else
-                cached_insn_opcode <= {16'b0, next_insn_opcode[15:0]};
-            cached_insn_rs1 <= decoded_rs1;
-            cached_insn_rs2 <= decoded_rs2;
-            cached_insn_rd <= decoded_rd;
-        end
-    end
 
     always @(posedge clk) begin
         is_lui_auipc_jal <= |{instr_lui, instr_auipc, instr_jal};
@@ -475,9 +444,9 @@ module picorv32 #(
                 alu_out_0 = !alu_lts;
             instr_bgeu:
                 alu_out_0 = !alu_ltu;
-            is_slti_blt_slt && (!TWO_CYCLE_COMPARE || !{instr_beq,instr_bne,instr_bge,instr_bgeu}):
+            is_slti_blt_slt && (!TWO_CYCLE_COMPARE || !{instr_beq, instr_bne, instr_bge, instr_bgeu}):
                 alu_out_0 = alu_lts;
-            is_sltiu_bltu_sltu && (!TWO_CYCLE_COMPARE || !{instr_beq,instr_bne,instr_bge,instr_bgeu}):
+            is_sltiu_bltu_sltu && (!TWO_CYCLE_COMPARE || !{instr_beq, instr_bne, instr_bge, instr_bgeu}):
                 alu_out_0 = alu_ltu;
         endcase
 
@@ -568,9 +537,6 @@ module picorv32 #(
         decoder_pseudo_trigger <= 0;
         decoder_pseudo_trigger_q <= decoder_pseudo_trigger;
         do_waitirq <= 0;
-
-        trace_valid <= 0;
-        trace_data <= 'bx;
 
         if (!resetn) begin
             reg_pc <= PROGADDR_RESET;

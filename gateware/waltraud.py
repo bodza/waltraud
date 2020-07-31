@@ -10206,21 +10206,6 @@ class PicoRV32(Module):
         mem_rdata = Signal("mem_rdata", 32)
 
         self.cpu_params = dict(
-            p_LATCHED_MEM_RDATA    = 0,
-            p_TWO_STAGE_SHIFT      = 0,
-            p_TWO_CYCLE_COMPARE    = 0,
-            p_TWO_CYCLE_ALU        = 0,
-            p_CATCH_MISALIGN       = 0,
-            p_CATCH_ILLINSN        = 1,
-            p_ENABLE_IRQ           = 1,
-            p_ENABLE_IRQ_QREGS     = 1,
-            p_ENABLE_IRQ_TIMER     = 0,
-            p_MASKED_IRQ           = 0x00000000,
-            p_LATCHED_IRQ          = 0xffffffff,
-            p_STACKADDR            = 0xffffffff,
-        )
-
-        self.cpu_params.update(
             i_clk    = ClockSignal(),
             i_resetn = ~(ResetSignal() | self.reset),
 
@@ -10245,7 +10230,8 @@ class PicoRV32(Module):
 
             # irq interface
             i_irq = self.interrupt,
-            o_eoi = Signal("o_eoi", 32)) # not used
+            o_eoi = Signal("o_eoi", 32) # not used
+        )
 
         # adapt memory interface to wishbone
         self.comb += [
