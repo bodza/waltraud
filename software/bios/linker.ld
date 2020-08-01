@@ -32,13 +32,6 @@ SECTIONS
         _erodata = .;
     } > sram
 
-    .commands :
-    {
-        PROVIDE_HIDDEN (__bios_cmd_start = .);
-        KEEP(*(.bios_cmd))
-        PROVIDE_HIDDEN (__bios_cmd_end = .);
-    } > sram
-
     .data :
     {
         . = ALIGN(8);

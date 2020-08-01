@@ -4,7 +4,7 @@
 
 /* Precondition: a != 0 */
 
-COMPILER_RT_ABI si_int
+si_int
 __clzsi2(si_int a)
 {
     su_int x = (su_int)a;

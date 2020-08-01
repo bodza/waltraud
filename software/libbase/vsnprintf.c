@@ -169,47 +169,6 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
                 str = number(str, end, (unsigned long) va_arg(args, void *), 16, field_width, precision, flags);
                 continue;
 
-#ifndef NO_FLOAT
-            case 'g':
-            case 'f': {
-                double f, g;
-
-                f = va_arg(args, double);
-                if (f < 0.0) {
-                    if (str < end)
-                        *str = '-';
-                    str++;
-                    f = -f;
-                }
-
-                g = pow(10.0, floor(log10(f)));
-                if (g < 1.0) {
-                    if (str < end)
-                        *str = '0';
-                    str++;
-                }
-                while (g >= 1.0) {
-                    if (str < end)
-                        *str = '0' + fmod(f/g, 10.0);
-                    str++;
-                    g /= 10.0;
-                }
-
-                if (str < end)
-                    *str = '.';
-                str++;
-
-                for (i = 0; i < 6; i++) {
-                    f = fmod(f * 10.0, 10.0);
-                    if (str < end)
-                        *str = '0' + f;
-                    str++;
-                }
-
-                continue;
-            }
-#endif
-
             case 'n':
                 /* FIXME: What does C99 say about the overflow case here? */
                 if (qualifier == 'l') {

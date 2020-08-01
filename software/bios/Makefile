@@ -17,8 +17,8 @@ endif
 
 bios.elf: $(BIOS_DIRECTORY)/linker.ld $(OBJECTS)
 
-%.elf: ../libbase/crt0.o ../libcompiler_rt/libcompiler_rt.a ../libbase/libbase-nofloat.a ../liblitedram/liblitedram.a
-	$(LD) $(LDFLAGS) -T $(BIOS_DIRECTORY)/linker.ld -N -o $@ ../libbase/crt0.o $(OBJECTS) -L../libcompiler_rt -L../libbase -L../liblitedram -llitedram -lbase-nofloat -lcompiler_rt
+%.elf: ../libbase/crt0.o ../libcompiler_rt/libcompiler_rt.a ../libbase/libbase.a
+	$(LD) $(LDFLAGS) -T $(BIOS_DIRECTORY)/linker.ld -N -o $@ ../libbase/crt0.o $(OBJECTS) -L../libcompiler_rt -L../libbase -lbase -lcompiler_rt
 	chmod -x $@
 
 -include $(OBJECTS:.o=.d)

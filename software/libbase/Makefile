@@ -1,20 +1,14 @@
 include ../include/generated/variables.mak
 include ../common.mak
 
-OBJECTS = exception.o libc.o errno.o crc16.o crc32.o console.o system.o uart.o time.o strtod.o strcasecmp.o div64.o progress.o memtest.o
+OBJECTS = console.o libc.o uart.o vsnprintf.o
 
-all: crt0.o libbase-nofloat.a # libbase.a
+all: crt0.o libbase.a
 
-libbase.a: $(OBJECTS) vsnprintf.o
-	$(AR) crs libbase.a $(OBJECTS) vsnprintf.o
-
-libbase-nofloat.a: $(OBJECTS) vsnprintf-nofloat.o
-	$(AR) crs libbase-nofloat.a $(OBJECTS) vsnprintf-nofloat.o
+libbase.a: $(OBJECTS)
+	$(AR) crs libbase.a $(OBJECTS)
 
 -include $(OBJECTS:.o=.d)
-
-vsnprintf-nofloat.o: $(LIBBASE_DIRECTORY)/vsnprintf.c
-	$(call compile,-DNO_FLOAT)
 
 %.o: $(LIBBASE_DIRECTORY)/%.c
 	$(compile)
@@ -28,5 +22,5 @@ crt0.o: $(CPU_DIRECTORY)/crt0.S
 .PHONY: all clean
 
 clean:
-	$(RM) $(OBJECTS) crt0.o vsnprintf.o vsnprintf-nofloat.o
-	$(RM) libbase.a libbase-nofloat.a
+	$(RM) $(OBJECTS) crt0.o
+	$(RM) libbase.a

@@ -2,10 +2,8 @@
 
 /* Returns: a / b */
 
-ARM_EABI_FNALIAS(uidiv, udivsi3)
-
 /* This function should not call __divsi3! */
-COMPILER_RT_ABI su_int
+su_int
 __udivsi3(su_int n, su_int d)
 {
     const unsigned n_uword_bits = sizeof(su_int) * CHAR_BIT;

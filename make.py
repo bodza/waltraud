@@ -2,7 +2,7 @@
 
 import argparse, math, os, struct, subprocess
 
-from gateware.waltraud import CSRStatus, get_sdram_phy_c_header, Memory, Waltraud, write_file
+from gateware.waltraud import CSRStatus, Memory, Waltraud, write_file
 
 def _get_mem_data(filename_or_regions, endianness="big"):
     if isinstance(filename_or_regions, dict):
@@ -163,7 +163,7 @@ class Builder:
         self.generated_dir = os.path.join(self.include_dir,  "generated")
 
         self.software_packages = []
-        for name in [ "libcompiler_rt", "libbase", "liblitedram", "bios" ]:
+        for name in [ "libcompiler_rt", "libbase", "bios" ]:
             src_dir = os.path.abspath(os.path.join("software", name))
             self.software_packages.append((name, src_dir))
 
@@ -192,8 +192,6 @@ class Builder:
         write_file(os.path.join(self.generated_dir, "mem.h"), _get_mem_header(self.soc.bus.regions))
         write_file(os.path.join(self.generated_dir, "soc.h"), _get_soc_header(self.soc.constants))
         write_file(os.path.join(self.generated_dir, "csr.h"), _get_csr_header(regions=self.soc.csr.regions, constants=self.soc.constants, csr_base=self.soc.bus.regions['csr'].origin))
-
-        write_file(os.path.join(self.generated_dir, "sdram_phy.h"), get_sdram_phy_c_header(self.soc.sdram.controller.settings.phy, self.soc.sdram.controller.settings.timing))
 
     def _create_firmware(self):
         for name, src_dir in self.software_packages:
