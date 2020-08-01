@@ -10221,13 +10221,6 @@ class PicoRV32(Module):
             o_mem_wstrb = mem_wstrb,
             i_mem_rdata = mem_rdata,
 
-            # look ahead interface (not used)
-            o_mem_la_read  = Signal("o_mem_la_read"),
-            o_mem_la_write = Signal("o_mem_la_write"),
-            o_mem_la_addr  = Signal("o_mem_la_addr", 32),
-            o_mem_la_wdata = Signal("o_mem_la_wdata", 32),
-            o_mem_la_wstrb = Signal("o_mem_la_wstrb", 4),
-
             # irq interface
             i_irq = self.interrupt,
             o_eoi = Signal("o_eoi", 32) # not used
@@ -10249,13 +10242,6 @@ class PicoRV32(Module):
 
         # add verilog sources
         self.add_sources(platform)
-
-    def set_reset_address(self, reset_address):
-        self.reset_address = reset_address
-        self.cpu_params.update(
-            p_PROGADDR_RESET = reset_address,
-            p_PROGADDR_IRQ   = reset_address + 0x00000010
-        )
 
     @staticmethod
     def add_sources(platform):
@@ -11232,8 +11218,7 @@ class OrangeCrab:
 
 class Waltraud(Module):
     mem_map = {
-        "rom":      0x00000000,
-        "sram":     0x20000000,
+        "sram":     0x00000000,
         "main_ram": 0x40000000,
         "csr":      0xf0000000,
     }
@@ -11298,7 +11283,6 @@ class Waltraud(Module):
         for n, (origin, size) in enumerate(self.cpu.io_regions.items()):
             self.bus.add_region("io{}".format(n), SoCIORegion(origin=origin, size=size, cached=False))
         self.mem_map.update(self.cpu.mem_map)
-        self.cpu.set_reset_address(self.mem_map["rom"])
         for n, cpu_bus in enumerate(self.cpu.periph_buses):
             self.bus.add_master(name="cpu_bus{}".format(n), master=cpu_bus)
         self.csr.add("cpu", use_loc_if_exists=True)
@@ -11309,9 +11293,8 @@ class Waltraud(Module):
         if hasattr(self.cpu, "nop"):
             self.add_constant("CONFIG_CPU_NOP", self.cpu.nop)
 
-        # Add integrated ROM and SRAM
-        self.add_rom("rom",  self.mem_map["rom"],   0x8000)
-        self.add_ram("sram", self.mem_map["sram"], 0x10000)
+        # Add SRAM
+        self.add_ram("sram", self.mem_map["sram"], 0x18000)
 
         # Add UART
         usb_pads = self.platform.request("usb")
@@ -11356,11 +11339,8 @@ class Waltraud(Module):
         self.bus.add_slave(name, ram.bus, SoCRegion(origin=origin, size=size, mode=mode))
         setattr(self.submodules, name, ram)
 
-    def add_rom(self, name, origin, size, contents=[]):
-        self.add_ram(name, origin, size, contents, mode="r")
-
-    def initialize_rom(self, data):
-        self.rom.mem.init = data
+    def set_firmware(self, data):
+        self.sram.mem.init = data
 
     def add_csr_bridge(self, origin):
         self.submodules.csr_bridge = Wishbone2CSR(

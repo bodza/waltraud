@@ -4,15 +4,15 @@ include ../common.mak
 OBJECTS = isr.o main.o
 
 all: bios.bin
-	$(PYTHON) -m litex.soc.software.memusage bios.elf $(CURDIR)/../include/generated/regions.ld riscv64-unknown-elf
+	$(BIOS_DIRECTORY)/../memusage.py bios.elf $(CURDIR)/../include/generated/regions.ld riscv64-unknown-elf
 
 %.bin: %.elf
 	$(OBJCOPY) -O binary $< $@
 	chmod -x $@
 ifeq ($(CPUENDIANNESS),little)
-	$(PYTHON) -m litex.soc.software.mkmscimg $@ --little
+	$(BIOS_DIRECTORY)/../mkmscimg.py $@ --little
 else
-	$(PYTHON) -m litex.soc.software.mkmscimg $@
+	$(BIOS_DIRECTORY)/../mkmscimg.py $@
 endif
 
 bios.elf: $(BIOS_DIRECTORY)/linker.ld $(OBJECTS)

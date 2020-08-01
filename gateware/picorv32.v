@@ -31,13 +31,6 @@ module picorv32 #(
     output reg [ 3:0] mem_wstrb,
     input      [31:0] mem_rdata,
 
-    // Look-Ahead Interface
-    output            mem_la_read,
-    output            mem_la_write,
-    output     [31:0] mem_la_addr,
-    output reg [31:0] mem_la_wdata,
-    output reg [ 3:0] mem_la_wstrb,
-
     // IRQ Interface
     input      [31:0] irq,
     output reg [31:0] eoi
@@ -88,9 +81,12 @@ module picorv32 #(
 
     wire mem_done = resetn && ((mem_xfer && |mem_state && (mem_do_rinst || mem_do_rdata || mem_do_wdata)) || (&mem_state && mem_do_rinst));
 
-    assign mem_la_write = resetn && !mem_state && mem_do_wdata;
-    assign mem_la_read = resetn && (!mem_state && (mem_do_rinst || mem_do_prefetch || mem_do_rdata));
-    assign mem_la_addr = (mem_do_prefetch || mem_do_rinst) ? {next_pc[31:2], 2'b00} : {reg_op1[31:2], 2'b00};
+    wire mem_la_read = resetn && (!mem_state && (mem_do_rinst || mem_do_prefetch || mem_do_rdata));
+    wire mem_la_write = resetn && !mem_state && mem_do_wdata;
+    wire [31:0] mem_la_addr = (mem_do_prefetch || mem_do_rinst) ? {next_pc[31:2], 2'b00} : {reg_op1[31:2], 2'b00};
+
+    reg [31:0] mem_la_wdata;
+    reg [3:0] mem_la_wstrb;
 
     wire [31:0] mem_rdata_latched = (mem_xfer || LATCHED_MEM_RDATA) ? mem_rdata : mem_rdata_q;
 

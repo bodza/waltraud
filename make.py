@@ -195,21 +195,17 @@ class Builder:
 
         write_file(os.path.join(self.generated_dir, "sdram_phy.h"), get_sdram_phy_c_header(self.soc.sdram.controller.settings.phy, self.soc.sdram.controller.settings.timing))
 
-    def _prepare_rom_software(self):
+    def _create_firmware(self):
         for name, src_dir in self.software_packages:
             dst_dir = os.path.join(self.software_dir, name)
             os.makedirs(dst_dir, exist_ok=True)
-
-    def _generate_rom_software(self):
-         for name, src_dir in self.software_packages:
-            dst_dir = os.path.join(self.software_dir, name)
             makefile = os.path.join(src_dir, "Makefile")
             subprocess.check_call(["make", "-C", dst_dir, "-I", src_dir, "-f", makefile])
 
-    def _initialize_rom_software(self):
+    def _set_firmware(self):
         bios_file = os.path.join(self.software_dir, "bios", "bios.bin")
         bios_data = _get_mem_data(bios_file, self.soc.cpu.endianness)
-        self.soc.initialize_rom(bios_data)
+        self.soc.set_firmware(bios_data)
 
     def build(self, build_name, run):
         os.makedirs(self.gateware_dir, exist_ok=True)
@@ -219,9 +215,8 @@ class Builder:
         self.soc.finalize()
 
         self._generate_includes()
-        self._prepare_rom_software()
-        self._generate_rom_software()
-        self._initialize_rom_software()
+        self._create_firmware()
+        self._set_firmware()
 
         vns = self.soc.build(self.gateware_dir, build_name, run)
         self.soc.do_exit(vns=vns)

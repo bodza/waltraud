@@ -15,7 +15,7 @@ SECTIONS
 
         *(.text .stub .text.* .gnu.linkonce.t.*)
         _etext = .;
-    } > rom
+    } > sram
 
     .rodata :
     {
@@ -30,14 +30,14 @@ SECTIONS
         FILL(0);
         . = ALIGN(8);
         _erodata = .;
-    } > rom
+    } > sram
 
     .commands :
     {
         PROVIDE_HIDDEN (__bios_cmd_start = .);
         KEEP(*(.bios_cmd))
         PROVIDE_HIDDEN (__bios_cmd_end = .);
-    } > rom
+    } > sram
 
     .data :
     {
@@ -51,7 +51,7 @@ SECTIONS
         FILL(0);
         . = ALIGN(8);
         _edata = .;
-    } > sram AT > rom
+    } > sram
 
     .bss :
     {
