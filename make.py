@@ -126,7 +126,6 @@ def _get_csr_header(regions, constants, csr_base=None, with_access_functions=Tru
     r += "#ifndef __GENERATED_CSR_H\n#define __GENERATED_CSR_H\n"
     if with_access_functions:
         r += "#include <stdint.h>\n"
-        r += "#include <system.h>\n"
         r += "#ifndef CSR_ACCESSORS_DEFINED\n"
         r += "#include <hw/common.h>\n"
         r += "#endif\n"
@@ -163,7 +162,7 @@ class Builder:
         self.generated_dir = os.path.join(self.include_dir,  "generated")
 
         self.software_packages = []
-        for name in [ "libcompiler_rt", "libbase", "bios" ]:
+        for name in [ "bios" ]:
             src_dir = os.path.abspath(os.path.join("software", name))
             self.software_packages.append((name, src_dir))
 
@@ -178,7 +177,6 @@ class Builder:
         define("CPU", self.soc.cpu.name)
         define("CPUFLAGS", self.soc.cpu.gcc_flags)
         define("CPUENDIANNESS", self.soc.cpu.endianness)
-        define("CPU_DIRECTORY", os.path.abspath(os.path.join("software", "picorv32")))
 
         variables_contents.append("export BUILDINC_DIRECTORY\n")
         define("BUILDINC_DIRECTORY", self.include_dir)

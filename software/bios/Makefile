@@ -1,7 +1,7 @@
 include ../include/generated/variables.mak
 include ../common.mak
 
-OBJECTS = isr.o main.o
+OBJECTS = crt0.o main.o uart.o
 
 all: bios.bin
 	$(BIOS_DIRECTORY)/../memusage.py bios.elf $(CURDIR)/../include/generated/regions.ld riscv64-unknown-elf
@@ -16,15 +16,16 @@ else
 endif
 
 bios.elf: $(BIOS_DIRECTORY)/linker.ld $(OBJECTS)
-
-%.elf: ../libbase/crt0.o ../libcompiler_rt/libcompiler_rt.a ../libbase/libbase.a
-	$(LD) $(LDFLAGS) -T $(BIOS_DIRECTORY)/linker.ld -N -o $@ ../libbase/crt0.o $(OBJECTS) -L../libcompiler_rt -L../libbase -lbase -lcompiler_rt
+	$(LD) $(LDFLAGS) -T $(BIOS_DIRECTORY)/linker.ld -N -o $@ $(OBJECTS)
 	chmod -x $@
 
 -include $(OBJECTS:.o=.d)
 
 %.o: $(BIOS_DIRECTORY)/%.c
 	$(compile)
+
+%.o: $(BIOS_DIRECTORY)/%.S
+	$(assemble)
 
 clean:
 	$(RM) $(OBJECTS) bios.elf bios.bin

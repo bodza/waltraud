@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#define UART_POLLING
+
 #define UART_EV_TX    0x1
 #define UART_EV_RX    0x2
 

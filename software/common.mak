@@ -28,7 +28,7 @@ endif
 # -include $(OBJECTS:.o=.d)
 DEPFLAGS += -MD -MP
 
-INCLUDES = -I$(BIOS_DIRECTORY)/../include -I$(BIOS_DIRECTORY)/.. -I$(BUILDINC_DIRECTORY) -I$(CPU_DIRECTORY)
+INCLUDES = -I$(BIOS_DIRECTORY)/../include -I$(BIOS_DIRECTORY)/.. -I$(BUILDINC_DIRECTORY)
 COMMONFLAGS = $(DEPFLAGS) -Os $(CPUFLAGS) -g3 -fomit-frame-pointer -Wall -fno-builtin -nostdinc $(INCLUDES)
 CFLAGS = $(COMMONFLAGS) -fexceptions -Wstrict-prototypes -Wold-style-definition -Wmissing-prototypes
 LDFLAGS = -nostdlib -nodefaultlibs -L$(BUILDINC_DIRECTORY)

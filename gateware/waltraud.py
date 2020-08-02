@@ -7109,9 +7109,6 @@ class PicoRV32(Module):
     data_width           = 32
     endianness           = "little"
     linker_output_format = "elf32-littleriscv"
-    nop                  = "nop"
-    interrupts           = {}
-    mem_map              = {}
     io_regions           = {0x80000000: 0x80000000} # origin, length
     gcc_flags            = None
 
@@ -7119,19 +7116,10 @@ class PicoRV32(Module):
     def gcc_flags(self):
         return "-mno-save-restore -march=rv32i -mabi=ilp32 -D__picorv32__ "
 
-    @property
-    def reserved_interrupts(self):
-        return {
-            "timer":                0,
-            "ebreak_ecall_illegal": 1,
-            "bus_error":            2
-        }
-
     def __init__(self, platform):
         self.platform     = platform
         self.trap         = Signal("trap")
         self.reset        = Signal("reset")
-        self.interrupt    = Signal("interrupt", 32)
         self.idbus        = idbus = WishboneInterface()
         self.periph_buses = [idbus]
         self.memory_buses = []
@@ -7159,10 +7147,6 @@ class PicoRV32(Module):
             o_mem_wdata = mem_wdata,
             o_mem_wstrb = mem_wstrb,
             i_mem_rdata = mem_rdata,
-
-            # irq interface
-            i_irq = self.interrupt,
-            o_eoi = Signal("o_eoi", 32) # not used
         )
 
         # adapt memory interface to wishbone
@@ -7430,18 +7414,6 @@ class SoCCSRHandler(SoCLocHandler):
         if self.locs.get(name, None) is None:
             raise
         return self.locs[name]
-
-class SoCIRQHandler(SoCLocHandler):
-    def __init__(self, n_irqs=32, reserved_irqs={}):
-        SoCLocHandler.__init__(self, "IRQ", n_locs=n_irqs)
-
-        # Check IRQ Number
-        if n_irqs > 32:
-            raise
-
-        # Adding reserved IRQs
-        for name, n in reserved_irqs.items():
-            self.add(name, n)
 
 class SoCController(Module, AutoCSR):
     def __init__(self, with_reset = True, with_scratch = True, with_errors = True):
@@ -8010,69 +7982,6 @@ class CRG(Module):
         usb_pll.create_clkout(self.cd_usb_48, 48e6)
         usb_pll.create_clkout(self.cd_usb_12, 12e6)
 
-# The Timer is implemented as a countdown timer that can be used in various modes:
-#
-# - Polling : Returns current countdown value to software
-# - One-Shot: Loads itself and stops when value reaches 0
-# - Periodic: (Re-)Loads itself when value reaches 0
-#
-# en register allows the user to enable/disable the Timer. When the Timer is enabled, it is
-# automatically loaded with the value of load register.
-#
-# When the Timer reaches 0, it is automatically reloaded with value of reload register.
-#
-# The user can latch the current countdown value by writing to update_value register, it will
-# update value register with current countdown value.
-#
-# To use the Timer in One-Shot mode, the user needs to:
-#
-# - Disable the timer
-# - Set the load register to the expected duration
-# - (Re-)Enable the Timer
-#
-# To use the Timer in Periodic mode, the user needs to:
-#
-# - Disable the Timer
-# - Set the load register to 0
-# - Set the reload register to the expected period
-# - Enable the Timer
-#
-# For both modes, the CPU can be advertised by an IRQ that the duration/period has elapsed. (The
-# CPU can also do software polling with update_value and value to know the elapsed duration)
-
-class Timer(Module, AutoCSR):
-    def __init__(self, width=32):
-        # Load value when Timer is (re-)enabled. In One-Shot mode, the value written to this register specifies the Timer's duration in clock cycles.
-        self._load = CSRStorage("load", width)
-        # Reload value when Timer reaches 0. In Periodic mode, the value written to this register specify the Timer's period in clock cycles.
-        self._reload = CSRStorage("reload", width)
-        # Enable flag of the Timer. Set this flag to 1 to enable/start the Timer. Set to 0 to disable the Timer.
-        self._en = CSRStorage("en", 1)
-        # Update trigger for the current countdown value. A write to this register latches the current countdown value to value register.
-        self._update_value = CSRStorage("update_value", 1)
-        # Latched countdown value. This value is updated by writing to update_value.
-        self._value = CSRStatus("value", width)
-
-        self.submodules.ev = EventManager()
-        self.ev.zero       = EventSourceProcess()
-        self.ev.finalize()
-
-        value = Signal("value", width)
-        self.sync += [
-            If(self._en.storage,
-                If(value == 0,
-                    # set reload to 0 to disable reloading
-                    value.eq(self._reload.storage)
-                ).Else(
-                    value.eq(value - 1)
-                )
-            ).Else(
-                value.eq(self._load.storage)
-            ),
-            If(self._update_value.re, self._value.status.eq(value))
-        ]
-        self.comb += self.ev.zero.trigger.eq(value != 0)
-
 class OrangeCrab:
     revision = "0.2"
 
@@ -8133,10 +8042,6 @@ class OrangeCrab:
         return self.toolchain.build(self, fragment, build_dir, build_name, run)
 
 class Waltraud(Module):
-    mem_map = {
-        "sram": 0x00000000,
-        "csr":  0xf0000000,
-    }
 
     def __init__(self,
         sys_clk_freq         = 64e6,
@@ -8153,13 +8058,6 @@ class Waltraud(Module):
         csr_reserved_csrs    = {
             "ctrl":   0,
             "uart":   2,
-            "timer0": 3,
-        },
-        # Interrupt parameters
-        irq_n_irqs           = 32,
-        irq_reserved_irqs    = {
-            "timer0": 3,
-            "uart":   4,
         }):
 
         self.platform     = OrangeCrab()
@@ -8181,11 +8079,6 @@ class Waltraud(Module):
             reserved_csrs = csr_reserved_csrs,
         )
 
-        self.submodules.irq = SoCIRQHandler(
-            n_irqs        = irq_n_irqs,
-            reserved_irqs = irq_reserved_irqs,
-        )
-
         self.constants = {}
         self.add_config("CLOCK_FREQUENCY", int(self.sys_clk_freq))
 
@@ -8197,19 +8090,14 @@ class Waltraud(Module):
         self.submodules.cpu = PicoRV32(self.platform)
         for n, (origin, size) in enumerate(self.cpu.io_regions.items()):
             self.bus.add_region("io{}".format(n), SoCIORegion(origin=origin, size=size, cached=False))
-        self.mem_map.update(self.cpu.mem_map)
         for n, cpu_bus in enumerate(self.cpu.periph_buses):
             self.bus.add_master(name="cpu_bus{}".format(n), master=cpu_bus)
         self.csr.add("cpu", use_loc_if_exists=True)
-        for name, loc in self.cpu.interrupts.items():
-            self.irq.add(name, loc)
         if hasattr(self.ctrl, "reset"):
             self.comb += self.cpu.reset.eq(self.ctrl.reset)
-        if hasattr(self.cpu, "nop"):
-            self.add_constant("CONFIG_CPU_NOP", self.cpu.nop)
 
         # Add SRAM
-        self.add_ram("sram", self.mem_map["sram"], 0x1c000)
+        self.add_ram("sram", 0x00000000, 0x1c000)
 
         # Add UART
         usb_pads = self.platform.request("usb")
@@ -8217,15 +8105,9 @@ class Waltraud(Module):
         self.submodules.uart = CDCUsb(usb_iobuf)
         self.csr.add("uart_phy", use_loc_if_exists=True)
         self.csr.add("uart", use_loc_if_exists=True)
-        self.irq.add("uart", use_loc_if_exists=True)
-
-        # Add Timer
-        self.submodules.timer0 = Timer()
-        self.csr.add("timer0", use_loc_if_exists=True)
-        self.irq.add("timer0", use_loc_if_exists=True)
 
         # Add CSR bridge
-        self.add_csr_bridge(self.mem_map["csr"])
+        self.add_csr_bridge()
 
         # Add CRG
         self.submodules.crg = CRG(self.platform, self.sys_clk_freq)
@@ -8252,7 +8134,7 @@ class Waltraud(Module):
     def set_firmware(self, data):
         self.sram.mem.init = data
 
-    def add_csr_bridge(self, origin):
+    def add_csr_bridge(self, origin=0xf0000000):
         self.submodules.csr_bridge = Wishbone2CSR(
             bus_csr       = CSRBusInterface(
             address_width = self.csr.address_width,
@@ -8285,10 +8167,6 @@ class Waltraud(Module):
                     if hasattr(self.ctrl, "bus_error"):
                         self.comb += self.ctrl.bus_error.eq(self.bus_interconnect.timeout.error)
 
-        self.add_constant("CONFIG_BUS_STANDARD",      self.bus.standard.upper())
-        self.add_constant("CONFIG_BUS_DATA_WIDTH",    self.bus.data_width)
-        self.add_constant("CONFIG_BUS_ADDRESS_WIDTH", self.bus.address_width)
-
         self.submodules.csr_bankarray = CSRBankArray(self,
             address_map        = self.csr.address_map,
             data_width         = self.csr.data_width,
@@ -8320,16 +8198,6 @@ class Waltraud(Module):
 
         # Sort CSR regions by origin
         self.csr.regions = {k: v for k, v in sorted(self.csr.regions.items(), key=lambda item: item[1].origin)}
-
-        for name, loc in sorted(self.irq.locs.items()):
-            if name in self.cpu.interrupts.keys():
-                continue
-            if hasattr(self, name):
-                module = getattr(self, name)
-                if not hasattr(module, "ev"):
-                    raise
-                self.comb += self.cpu.interrupt[loc].eq(module.ev.irq)
-            self.add_constant(name + "_INTERRUPT", loc)
 
         # Retro-compatibility
         for region in self.bus.regions.values():
