@@ -13,11 +13,11 @@
     )
 )
 
-(refer! clojure.core [+ - = aget alength and apply aset atom char char? cond conj cons declare defmacro defn deref first fn fn? identical? int let list loop memoize neg? next not number? object-array or seq seq? seqable? sequential? str string? swap! symbol symbol? the-ns time var? when])
+(refer! clojure.core [+ - = aget alength and apply aset atom case char char? cond conj cons declare defmacro defn deref false? first fn fn? identical? int let list long long-array loop memoize neg? next nil? not number? or seq seq? seqable? sequential? str string? swap! symbol symbol? the-ns time true? var? when])
 
 (defn &throw! [& s] (throw (Error. (apply str s))))
 
-(defn &bits [s] (char (Integer/parseInt (if (number? s) (str s) s), 2)))
+(defn &bits [s] (char (Long/parseLong (if (number? s) (str s) s), 2)))
 (def  &bits?     char?)
 (def  &bits=     =)
 
@@ -30,7 +30,7 @@
 (def -conj        conj)
 (def -first       first)
 (def -fn?         fn?)
-(def &identical?  identical?)
+(defn &identical? [x y] (cond (and (char? x) (char? y)) (= x y) (and (number? x) (number? y)) (= x y) 'else (identical? x y)))
 (def -next        next)
 (def -seq         seq)
 (def -seq?        seq?)
@@ -44,18 +44,27 @@
 (defn -var-find [s] (.findInternedVar (the-ns 'waltraud.core), (symbol s)))
 (defn -var-get  [v] (.get v))
 
-(def Waltraud'ram (object-array 4194304))
+(def Waltraud'ram (long-array 4194304))
 (def Waltraud'gc (atom (alength Waltraud'ram)))
 
 (defn &anew [n] (let [a (swap! Waltraud'gc - n)] (if (neg? a) (&throw! "ram non più at " a) a)))
 
-(defn &aget [a i]   (aget Waltraud'ram (+ a i)))
-(defn &aset [a i x] (aset Waltraud'ram (+ a i) x))
+(defn &aget [a i]
+    (let [x (aget Waltraud'ram (+ a i))]
+        (case x -1 nil -2 false -3 true (if (neg? x) (char (- 0 x 1)) x))
+    )
+)
+
+(defn &aset [a i x]
+    (let [x (cond (nil? x) -1 (false? x) -2 (true? x) -3 (char? x) (- 0 (long x) 1) 'else x)]
+        (aset Waltraud'ram (+ a i) x)
+    )
+)
 
 (defn &car [s] (&aget s 1))
 (defn &cdr [s] (&aget s 2))
 
-(defn &volatile-cas-cdr! [a x y] (when (identical? (&aget a 2) x) (&aset a 2 y) a))
+(defn &volatile-cas-cdr! [a x y] (when (&identical? (&aget a 2) x) (&aset a 2 y) a))
 (defn &volatile-get-cdr  [a]     (&aget a 2))
 (defn &volatile-set-cdr! [a x]   (&aset a 2 x) a)
 
