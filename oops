@@ -1,0 +1,47 @@
+
+(defn E [e, m]
+    (if (or (nil? e) (true? e) (false? e))
+        e
+        (case (first e)
+            &'literal   (second e)
+            &'binding
+                (loop [m (seq m)]
+                    (when (some? m)
+                        (if (= (first m) (second e)) (second m) (recur (next (next m))))
+                    )
+                )
+            &'if        (E (if (E (second e), m) (third e) (fourth e)), m)
+            &'apply
+                (let [
+                    g
+                        (loop [g (E (second e), m)]
+                            (if (and (&meta? g) (= (&car g) &'atom)) (recur (&volatile-get-cdr g)) g)
+                        )
+                    [f & n] (&cdr g)
+                    n
+                        (let [x (second f)]
+                            (if (some? x) (&cons x (&cons g n)) n)
+                        )
+                    s (map #(E %, m) (third e))
+                    n
+                        (loop [n n p (seq (third f)) s (seq s)]
+                            (if (some? p)
+                                (recur (&cons (first p) (&cons (first s) n)) (next p) (next s))
+                                (let [x (fourth f)]
+                                    (if (some? x) (&cons x (&cons s n)) n)
+                                )
+                            )
+                        )
+                ]
+                    (E (fifth f), n)
+                )
+            &'fn        (&meta &'closure (&cons e m))
+            &'var-get   (&volatile-get-cdr (second e))
+            &'var-set!  (do (&volatile-set-cdr! (second e) (E (third e), m)) nil)
+                        (let [s (map #(E %, m) (next e))]
+                            (&embed (first e) s)
+                        )
+        )
+    )
+)
+
