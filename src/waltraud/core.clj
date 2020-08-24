@@ -169,7 +169,6 @@
     (defn second [s] (first (next s)))
     (defn third  [s] (first (next (next s))))
     (defn fourth [s] (first (next (next (next s)))))
-    (defn fifth  [s] (first (next (next (next (next s))))))
 
     (defn last [s] (let [r (next s)] (if (some? r) (#_recur last r) (first s))))
 
@@ -256,6 +255,8 @@
 (declare reverse)
 
 (defn cons [x s] (Cons'new x, (if (-/-seq? s) (reverse (reverse s)) s)))
+
+(defn cons* [x & s] (cons x s))
 
 (defn conj [s x] (cons x s))
 
@@ -544,20 +545,20 @@
         (let [
             fun (Closure''fun this) env (Closure''env this)
             env
-                (let [x (second fun)]
+                (let [x (first fun)]
                     (if (some? x) (assoc env x this) env)
                 )
             env
-                (loop [env env pars (seq (third fun)) args (seq args)]
+                (loop [env env pars (seq (second fun)) args (seq args)]
                     (if (some? pars)
                         (recur (assoc env (first pars) (first args)) (next pars) (next args))
-                        (let [x (fourth fun)]
+                        (let [x (third fun)]
                             (if (some? x) (assoc env x args) env)
                         )
                     )
                 )
         ]
-            (Machine'compute (fifth fun), env)
+            (Machine'compute (fourth fun), env)
         )
     )
 
@@ -773,28 +774,29 @@
     (defn println [& s] (apply print s) (newline) (flush) nil)
 )
 
-(def &'literal  (&bits '1110000000001000))
+(def &'quote    (&bits '1110000000001000))
 (def &'binding  (&bits '1110000000001001))
 (def &'if       (&bits '1110000000001010))
 (def &'apply    (&bits '1110000000001011))
 (def &'fn       (&bits '1110000000001100))
 (def &'var-get  (&bits '1110000000001101))
 (def &'var-set! (&bits '1110000000001110))
+(def &'embed    (&bits '1110000000001111))
 
-(about #_"LiteralExpr"
-    (defn LiteralExpr'create [form]
+(about #_"QuoteExpr"
+    (defn QuoteExpr'create [form]
         (if (or (nil? form) (true? form) (false? form))
             form
-            (list &'literal form)
+            (&meta &'quote (cons* form))
         )
     )
 
-    (defn LiteralExpr'parse [form, scope]
+    (defn QuoteExpr'parse [form, scope]
         (cond
             (nil? (next form))         (&throw! "too few arguments to quote")
             (some? (next (next form))) (&throw! "too many arguments to quote")
         )
-        (LiteralExpr'create (second form))
+        (QuoteExpr'create (second form))
     )
 )
 
@@ -811,7 +813,7 @@
             then (Compiler'analyze (third form), scope)
             else (Compiler'analyze (fourth form), scope)
         ]
-            (list &'if test then else)
+            (&meta &'if (cons* test then else))
         )
     )
 )
@@ -821,7 +823,7 @@
         (let [
             args (map (fn [%] (Compiler'analyze %, scope)) (next form))
         ]
-            (cons (first form) args)
+            (&meta &'embed (cons (first form) args))
         )
     )
 )
@@ -832,7 +834,7 @@
             fexpr (Compiler'analyze (first form), scope)
             args (map (fn [%] (Compiler'analyze %, scope)) (next form))
         ]
-            (list &'apply fexpr args)
+            (&meta &'apply (cons fexpr args))
         )
     )
 )
@@ -879,7 +881,7 @@
                 )
             body (EmbedExpr'parse (cons (! '&do) (next form)), scope)
         ]
-            (list &'fn self pars etal body)
+            (&meta &'fn (cons* self pars etal body))
         )
     )
 )
@@ -892,7 +894,12 @@
         )
         (let [s (second form)]
             (if (symbol? s)
-                (list &'var-set! (Var'lookup s) (Compiler'analyze (third form), scope))
+                (let [
+                    var (Var'lookup s)
+                    any (Compiler'analyze (third form), scope)
+                ]
+                    (&meta &'var-set! (cons* var any))
+                )
                 (&throw! "first argument to def must be a symbol")
             )
         )
@@ -920,7 +927,7 @@
             (= s 'def)   DefExpr'parse
             (= s 'fn)    FnExpr'parse
             (= s 'if)    IfExpr'parse
-            (= s 'quote) LiteralExpr'parse
+            (= s 'quote) QuoteExpr'parse
         )
     )
 
@@ -956,17 +963,17 @@
             (symbol? form)
                 (or
                     (when (some (fn [%] (= % form)) scope)
-                        (list &'binding form)
+                        (&meta &'binding (cons* form))
                     )
                     (let [v (Var'find form)]
                         (when (some? v)
-                            (list &'var-get v)
+                            (&meta &'var-get (cons* v))
                         )
                     )
                     (&throw! "unable to resolve symbol " form)
                 )
             'else
-                (LiteralExpr'create form)
+                (QuoteExpr'create form)
         )
     )
 )
@@ -974,54 +981,54 @@
 (defn eval [form] (Machine'compute (Compiler'analyze form, nil), nil))
 
 (about #_"machine"
-    (defn &embed [f s]
-        (cond
-            (= f '&do)         (last s)
-
-            (= f '&bits)       (-/&bits (apply -/-str (first s)))
-            (= f '&bits?)      (-/&bits? (first s))
-            (= f '&bits=)      (-/&bits= (first s) (second s))
-            (= f '&identical?) (-/&identical? (first s) (second s))
-
-            (= f '&read)       (-/&read (first s))
-            (= f '&unread)     (-/&unread (first s) (second s))
-            (= f '&append)     (-/&append (first s) (second s))
-            (= f '&flush)      (-/&flush (first s))
-
-            (= f '&car)        (-/&car (first s))
-            (= f '&cdr)        (-/&cdr (first s))
-
-            (= f '&cons?)      (-/&cons? (first s))
-            (= f '&meta?)      (-/&meta? (first s))
-
-            (= f '&cons)       (-/&cons (first s) (second s))
-            (= f '&meta)       (-/&meta (first s) (second s))
-            (= f '&meta!)      (-/&meta! (first s) (second s))
-
-            (= f '&volatile-cas-cdr!) (-/&volatile-cas-cdr! (first s) (second s) (third s))
-            (= f '&volatile-get-cdr)  (-/&volatile-get-cdr (first s))
-            (= f '&volatile-set-cdr!) (-/&volatile-set-cdr! (first s) (second s))
-
-            (= f '&throw!)     (apply -/&throw! (map (fn [%] (apply -/-str %)) s))
-            'else              (-/&throw! "&embed not supported on " f)
-        )
-    )
-
     (defn Machine'compute [form, env]
-        (if (or (nil? form) (true? form) (false? form))
-            form
-            (let [f (first form) f'compute (fn [%] (Machine'compute %, env))]
+        (if (&meta? form)
+            (let [f (&car form) s (&cdr form) f'compute (fn [%] (Machine'compute %, env))]
                 (cond
-                    (= f &'literal)  (second form)
-                    (= f &'binding)  (get env (second form))
-                    (= f &'if)       (f'compute (if (f'compute (second form)) (third form) (fourth form)))
-                    (= f &'apply)    (apply (f'compute (second form)) (map f'compute (third form)))
-                    (= f &'fn)       (Closure'new form, env)
-                    (= f &'var-get)  (Var''get (second form))
-                    (= f &'var-set!) (Var''set (second form), (f'compute (third form)))
-                    'else            (&embed f (map f'compute (next form)))
+                    (= f &'quote)    (first s)
+                    (= f &'binding)  (get env (first s))
+                    (= f &'if)       (f'compute (if (f'compute (first s)) (second s) (third s)))
+                    (= f &'apply)    (apply (f'compute (first s)) (map f'compute s))
+                    (= f &'fn)       (Closure'new s, env)
+                    (= f &'var-get)  (Var''get (first s))
+                    (= f &'var-set!) (Var''set (first s), (f'compute (second s)))
+                    (= f &'embed)
+                        (let [f (first s) s (map f'compute (next s))]
+                            (cond
+                                (= f '&do)         (last s)
+
+                                (= f '&bits)       (-/&bits (apply -/-str (first s)))
+                                (= f '&bits?)      (-/&bits? (first s))
+                                (= f '&bits=)      (-/&bits= (first s) (second s))
+                                (= f '&identical?) (-/&identical? (first s) (second s))
+
+                                (= f '&read)       (-/&read (first s))
+                                (= f '&unread)     (-/&unread (first s) (second s))
+                                (= f '&append)     (-/&append (first s) (second s))
+                                (= f '&flush)      (-/&flush (first s))
+
+                                (= f '&car)        (-/&car (first s))
+                                (= f '&cdr)        (-/&cdr (first s))
+
+                                (= f '&cons?)      (-/&cons? (first s))
+                                (= f '&meta?)      (-/&meta? (first s))
+
+                                (= f '&cons)       (-/&cons (first s) (second s))
+                                (= f '&meta)       (-/&meta (first s) (second s))
+                                (= f '&meta!)      (-/&meta! (first s) (second s))
+
+                                (= f '&volatile-cas-cdr!) (-/&volatile-cas-cdr! (first s) (second s) (third s))
+                                (= f '&volatile-get-cdr)  (-/&volatile-get-cdr (first s))
+                                (= f '&volatile-set-cdr!) (-/&volatile-set-cdr! (first s) (second s))
+
+                                (= f '&throw!)     (apply -/&throw! (map (fn [%] (apply -/-str %)) s))
+                                'else              (-/&throw! "&embed not supported on " f)
+                            )
+                        )
+                    'else            form
                 )
             )
+            form
         )
     )
 )
