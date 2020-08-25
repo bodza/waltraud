@@ -1025,15 +1025,15 @@
                     (= f &'if)         (f'compute (if (f'compute (first s)) (second s) (third s)))
 
                     (= f &'apply)      (apply (f'compute (first s)) (map f'compute s))
-                    (= f &'fn)         (Closure'new s, env)
+                    (= f &'fn)         (&meta &'closure (cons s env))
 
                     (= f &'quote)      (first s)
-                    (= f &'binding)    (get env (first s))
+                    (= f &'binding)    (let [m (seq env)] (when (some? m) (if (= (first m) (first s)) (second m) (Machine'compute form, (next (next m))))))
 
                     (= f &'var-get)    (Var''get (first s))
                     (= f &'var-set!)   (Var''set (first s), (f'compute (second s)))
 
-                    (= f &'do)         (last (map f'compute s))
+                    (= f &'do)         (let [x (f'compute (first s)) s (next s)] (if (some? s) (f'compute (&meta f s)) x))
 
                     (= f &'bits)       (-/&bits (apply -/-str (f'compute (first s))))
                     (= f &'bits?)      (-/&bits? (f'compute (first s)))
