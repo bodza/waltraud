@@ -1030,7 +1030,7 @@
                             (when (&meta? c)
                                 (let [b (&car c)]
                                     (cond
-                                        (= b &'atom)    (&eval (&meta a (cons (&volatile-get-cdr c) s)) m)
+                                        (= b &'atom)    (&eval (&meta a (&cons (&volatile-get-cdr c) s)) m)
                                         (= b &'closure)
                                             (let [
                                                 g (first (&cdr c)) n (next (&cdr c))
@@ -1047,7 +1047,7 @@
                                                     )
                                                 n
                                                     (let [x (third g)]
-                                                        (if (some? x) (&cons x (&cons (when (some? s) (&meta &'eval* (&cons s m))) n)) n)
+                                                        (if (some? x) (&cons x (&cons (&eval (&meta &'eval* s) m) n)) n)
                                                     )
                                             ]
                                                 (&eval (fourth g) n)
@@ -1059,8 +1059,8 @@
                     (= a &'fn)         (&meta &'closure (&cons s m))
 
                     (= a &'eval*)
-                        (let [m (&cdr s) s (&car s)]
-                            (&cons (&eval (first s) m) (when (some? (next s)) (&meta &'eval* (&cons (next s) m))))
+                        (when (some? s)
+                            (&cons (&eval (first s) m) (&eval (&meta &'eval* (next s)) m))
                         )
 
                     (= a &'quote)      (&car s)
