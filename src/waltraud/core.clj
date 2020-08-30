@@ -539,7 +539,7 @@
     (defn Closure''fun [this] (first (&cdr this)))
     (defn Closure''env [this] (next  (&cdr this)))
 
-    (declare Machine'compute)
+    (declare &eval)
 
     (defn Closure''apply [this, args]
         (let [
@@ -558,7 +558,7 @@
                     )
                 )
         ]
-            (Machine'compute (fourth fun), env)
+            (&eval (fourth fun) env)
         )
     )
 
@@ -781,6 +781,7 @@
 (def &'binding  (&bits '1110000000001100))
 (def &'var-get  (&bits '1110000000001101))
 (def &'var-set! (&bits '1110000000001110))
+(def &'eval*    (&bits '1110000000001111))
 
 (about #_"QuoteExpr"
     (defn QuoteExpr'create [form]
@@ -1015,56 +1016,103 @@
     )
 )
 
-(defn eval [form] (Machine'compute (Compiler'analyze form, nil), nil))
+(defn eval [form] (&eval (Compiler'analyze form, nil) nil))
 
 (about #_"machine"
-    (defn Machine'compute [form, env]
-        (if (&meta? form)
-            (let [f (&car form) s (&cdr form) f'compute (fn [%] (Machine'compute %, env))]
+    (defn &eval [e m]
+        (if (&meta? e)
+            (let [a (&car e) s (&cdr e)]
                 (cond
-                    (= f &'if)         (f'compute (if (f'compute (first s)) (second s) (third s)))
+                    (= a &'if)         (&eval (if (&eval (&car s) m) (first (&cdr s)) (second (&cdr s))) m)
 
-                    (= f &'apply)      (apply (f'compute (first s)) (map f'compute s))
-                    (= f &'fn)         (&meta &'closure (cons s env))
+                    (= a &'apply)
+                        (let [c (&eval (&car s) m) s (&cdr s)]
+                            (when (&meta? c)
+                                (let [b (&car c)]
+                                    (cond
+                                        (= b &'atom)    (&eval (&meta a (cons (&volatile-get-cdr c) s)) m)
+                                        (= b &'closure)
+                                            (let [
+                                                g (first (&cdr c)) n (next (&cdr c))
+                                                n
+                                                    (let [x (first g)]
+                                                        (if (some? x) (&cons x (&cons c n)) n)
+                                                    )
+                                                n
+                                                    (loop [n n p (seq (second g)) s (seq s)]
+                                                        (if (some? p)
+                                                            (recur (&cons (first p) (&cons (&eval (first s) m) n)) (next p) (next s))
+                                                            n
+                                                        )
+                                                    )
+                                                n
+                                                    (let [x (third g)]
+                                                        (if (some? x) (&cons x (&cons (when (some? s) (&meta &'eval* (&cons s m))) n)) n)
+                                                    )
+                                            ]
+                                                (&eval (fourth g) n)
+                                            )
+                                    )
+                                )
+                            )
+                        )
+                    (= a &'fn)         (&meta &'closure (&cons s m))
 
-                    (= f &'quote)      (first s)
-                    (= f &'binding)    (let [m (seq env)] (when (some? m) (if (= (first m) (first s)) (second m) (Machine'compute form, (next (next m))))))
+                    (= a &'eval*)
+                        (let [m (&cdr s) s (&car s)]
+                            (&cons (&eval (first s) m) (when (some? (next s)) (&meta &'eval* (&cons (next s) m))))
+                        )
 
-                    (= f &'var-get)    (Var''get (first s))
-                    (= f &'var-set!)   (Var''set (first s), (f'compute (second s)))
+                    (= a &'quote)      (&car s)
+                    (= a &'binding)
+                        (when (some? m)
+                            (if (= (&car m) (&car s))
+                                (&car (&cdr m))
+                                (&eval e (&cdr (&cdr m)))
+                            )
+                        )
 
-                    (= f &'do)         (let [x (f'compute (first s)) s (next s)] (if (some? s) (f'compute (&meta f s)) x))
+                    (= a &'var-get)    (&volatile-get-cdr (&car s))
+                    (= a &'var-set!)   (&do (&volatile-set-cdr! (&car s) (&eval (first (&cdr s)) m)) nil)
 
-                    (= f &'bits)       (-/&bits (apply -/-str (f'compute (first s))))
-                    (= f &'bits?)      (-/&bits? (f'compute (first s)))
-                    (= f &'bits=)      (-/&bits= (f'compute (first s)) (f'compute (second s)))
+                    (= a &'do)
+                        (let [x (&eval (first s) m) s (next s)]
+                            (if (some? s)
+                                (&eval (&meta a s) m)
+                                x
+                            )
+                        )
 
-                    (= f &'identical?) (-/&identical? (f'compute (first s)) (f'compute (second s)))
+                    (= a &'bits)       (-/&bits (apply -/-str (&eval (first s) m)))
+                    (= a &'bits?)      (-/&bits? (&eval (first s) m))
+                    (= a &'bits=)      (-/&bits= (&eval (first s) m) (&eval (second s) m))
 
-                    (= f &'read)       (-/&read (f'compute (first s)))
-                    (= f &'unread)     (-/&unread (f'compute (first s)) (f'compute (second s)))
-                    (= f &'append)     (-/&append (f'compute (first s)) (f'compute (second s)))
-                    (= f &'flush)      (-/&flush (f'compute (first s)))
+                    (= a &'identical?) (-/&identical? (&eval (first s) m) (&eval (second s) m))
 
-                    (= f &'car)        (-/&car (f'compute (first s)))
-                    (= f &'cdr)        (-/&cdr (f'compute (first s)))
+                    (= a &'read)       (-/&read (&eval (first s) m))
+                    (= a &'unread)     (-/&unread (&eval (first s) m) (&eval (second s) m))
+                    (= a &'append)     (-/&append (&eval (first s) m) (&eval (second s) m))
+                    (= a &'flush)      (-/&flush (&eval (first s) m))
 
-                    (= f &'cons?)      (-/&cons? (f'compute (first s)))
-                    (= f &'meta?)      (-/&meta? (f'compute (first s)))
+                    (= a &'car)        (-/&car (&eval (first s) m))
+                    (= a &'cdr)        (-/&cdr (&eval (first s) m))
 
-                    (= f &'cons)       (-/&cons (f'compute (first s)) (f'compute (second s)))
-                    (= f &'meta)       (-/&meta (f'compute (first s)) (f'compute (second s)))
-                    (= f &'meta!)      (-/&meta! (f'compute (first s)) (f'compute (second s)))
+                    (= a &'cons?)      (-/&cons? (&eval (first s) m))
+                    (= a &'meta?)      (-/&meta? (&eval (first s) m))
 
-                    (= f &'volatile-cas-cdr!) (-/&volatile-cas-cdr! (f'compute (first s)) (f'compute (second s)) (f'compute (third s)))
-                    (= f &'volatile-get-cdr)  (-/&volatile-get-cdr (f'compute (first s)))
-                    (= f &'volatile-set-cdr!) (-/&volatile-set-cdr! (f'compute (first s)) (f'compute (second s)))
+                    (= a &'cons)       (-/&cons (&eval (first s) m) (&eval (second s) m))
+                    (= a &'meta)       (-/&meta (&eval (first s) m) (&eval (second s) m))
+                    (= a &'meta!)      (-/&meta! (&eval (first s) m) (&eval (second s) m))
 
-                    (= f &'throw!)     (apply -/&throw! (map (fn [%] (apply -/-str %)) (map f'compute s)))
-                    'else              form
+                    (= a &'volatile-cas-cdr!) (-/&volatile-cas-cdr! (&eval (first s) m) (&eval (second s) m) (&eval (third s) m))
+                    (= a &'volatile-get-cdr)  (-/&volatile-get-cdr (&eval (first s) m))
+                    (= a &'volatile-set-cdr!) (-/&volatile-set-cdr! (&eval (first s) m) (&eval (second s) m))
+
+                    (= a &'throw!)     (apply -/&throw! (map (fn [%] (apply -/-str %)) (map (fn [%] (&eval % m)) s)))
+                    'else              e
                 )
             )
-            form
+            e
         )
     )
 )
