@@ -781,7 +781,6 @@
 (def &'binding  (&bits '1110000000001100))
 (def &'var-get  (&bits '1110000000001101))
 (def &'var-set! (&bits '1110000000001110))
-(def &'eval*    (&bits '1110000000001111))
 
 (about #_"QuoteExpr"
     (defn QuoteExpr'create [form]
@@ -1018,12 +1017,47 @@
 
 (defn eval [form] (&eval (Compiler'analyze form, nil) nil))
 
+(def &''seq     (&bits '1110000001000000))
+(def &''eval*   (&bits '1110000001000001))
+
 (about #_"machine"
     (defn &eval [e m]
         (if (&meta? e)
             (let [a (&car e) s (&cdr e)]
                 (cond
                     (= a &'if)         (&eval (if (&eval (&car s) m) (first (&cdr s)) (second (&cdr s))) m)
+
+                    (= a &''seq)
+                        (cond
+                            (&cons? s) s
+                            (&meta? s)
+                                (let [b (&car s)]
+                                    (cond
+                                        (= b &'list)    (&eval (&meta a (&cdr s)) m)
+                                        (= b &'closure)
+                                            (let [
+                                                g (first (&cdr s)) n (next (&cdr s))
+                                                n
+                                                    (let [x (first g)]
+                                                        (if (some? x) (&cons x (&cons s n)) n)
+                                                    )
+                                                n
+                                                    (loop [n n p (&eval (&meta &''seq (second g)) m)]
+                                                        (if (some? p)
+                                                            (recur (&cons (first p) (&cons nil n)) (next p))
+                                                            n
+                                                        )
+                                                    )
+                                                n
+                                                    (let [x (third g)]
+                                                        (if (some? x) (&cons x (&cons nil n)) n)
+                                                    )
+                                            ]
+                                                (&eval (fourth g) n)
+                                            )
+                                    )
+                                )
+                        )
 
                     (= a &'apply)
                         (let [c (&eval (&car s) m) s (&cdr s)]
@@ -1039,7 +1073,7 @@
                                                         (if (some? x) (&cons x (&cons c n)) n)
                                                     )
                                                 n
-                                                    (loop [n n p (seq (second g)) s (seq s)]
+                                                    (loop [n n p (&eval (&meta &''seq (second g)) m) s (&eval (&meta &''seq s) m)]
                                                         (if (some? p)
                                                             (recur (&cons (first p) (&cons (&eval (first s) m) n)) (next p) (next s))
                                                             n
@@ -1047,7 +1081,7 @@
                                                     )
                                                 n
                                                     (let [x (third g)]
-                                                        (if (some? x) (&cons x (&cons (&eval (&meta &'eval* s) m) n)) n)
+                                                        (if (some? x) (&cons x (&cons (&eval (&meta &''eval* s) m) n)) n)
                                                     )
                                             ]
                                                 (&eval (fourth g) n)
@@ -1058,9 +1092,9 @@
                         )
                     (= a &'fn)         (&meta &'closure (&cons s m))
 
-                    (= a &'eval*)
+                    (= a &''eval*)
                         (when (some? s)
-                            (&cons (&eval (first s) m) (&eval (&meta &'eval* (next s)) m))
+                            (&cons (&eval (first s) m) (&eval (&meta a (next s)) m))
                         )
 
                     (= a &'quote)      (&car s)
