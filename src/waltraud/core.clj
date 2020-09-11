@@ -1076,12 +1076,10 @@
                                                     (loop [n n p (&eval (&meta &''seq (second g)) m) s (&eval (&meta &''seq s) m)]
                                                         (if (some? p)
                                                             (recur (&cons (first p) (&cons (&eval (first s) m) n)) (next p) (next s))
-                                                            n
+                                                            (let [x (third g)]
+                                                                (if (some? x) (&cons x (&cons (&eval (&meta &''eval* s) m) n)) n)
+                                                            )
                                                         )
-                                                    )
-                                                n
-                                                    (let [x (third g)]
-                                                        (if (some? x) (&cons x (&cons (&eval (&meta &''eval* s) m) n)) n)
                                                     )
                                             ]
                                                 (&eval (fourth g) n)
