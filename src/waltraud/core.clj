@@ -82,28 +82,194 @@
     (:require [waltraud.bore :as -])
 )
 
-(-/refer! waltraud.bore [and &append &bits &bits? &bits= &car &cdr cond cons &cons &cons? declare defn &flush fn &identical? let list loop &meta &meta! &meta? or &read &throw! &unread &volatile-cas-cdr! &volatile-get-cdr &volatile-set-cdr! when])
+(-/refer! waltraud.bore [and &append &bits &bits? &bits= &car &cdr cond &cons &cons? declare defn &flush fn &identical? let loop &meta &meta! &meta? or &read &throw! &unread &volatile-cas-cdr! &volatile-get-cdr &volatile-set-cdr! when])
 
-(defn -apply       [_ _]                         (&throw! "-apply non più"))
-(defn -conj        [_ _]                         (&throw! "-conj non più"))
-(defn -first       [_]                           (&throw! "-first non più"))
-(defn -fn?         [x]   (and (-/-fn? x)         (&throw! "-fn? non più")))
-(defn -next        [_]                           (&throw! "-next non più"))
-(defn -seq         [_]                           (&throw! "-seq non più"))
-(defn -seq?        [x]   (and (-/-seq? x)        (&throw! "-seq? non più")))
-(defn -seqable?    [x]   (and (-/-seqable? x)    (&throw! "-seqable? non più")))
-(defn -sequential? [x]   (and (-/-sequential? x) (&throw! "-sequential? non più")))
-(defn -str         [& _]                         (&throw! "-str non più"))
-(defn -string?     [x]   (and (-/-string? x)     (&throw! "-string? non più")))
-(defn -symbol?     [x]   (and (-/-symbol? x)     (&throw! "-symbol? non più")))
-(defn -var?        [x]   (and (-/-var? x)        (&throw! "-var? non più")))
-(defn -var-find    [_]                           (&throw! "-var-find non più"))
-(defn -var-get     [_]                           (&throw! "-var-get non più"))
+(defn -eager! [s] (if (-/-fn? s) (-/-apply s nil) s))
 
-(defn eager! [s] (if (-/-fn? s) (-/-apply s nil) s))
-
-(-/defmacro lazy-seq [& s] (-/list 'eager! (-/cons 'fn (-/cons [] s))))
+(-/defmacro lazy-seq [& s] (-/list '-eager! (-/cons 'fn (-/cons [] s))))
 (-/defmacro &do      [& s] (-/cons 'do s))
+
+(def &'list              (&bits '1110000000000000))
+(def &'string            (&bits '1110000000000001))
+(def &'symbol            (&bits '1110000000000010))
+(def &'closure           (&bits '1110000000000011))
+(def &'atom              (&bits '1110000000000100))
+
+(def &'if                (&bits '1110000000001000))
+(def &'apply             (&bits '1110000000001001))
+(def &'fn                (&bits '1110000000001010))
+(def &'quote             (&bits '1110000000001011))
+(def &'binding           (&bits '1110000000001100))
+(def &'var-get           (&bits '1110000000001101))
+(def &'var-set!          (&bits '1110000000001110))
+
+(def &'do                (&bits '1110000000010000))
+(def &'bits              (&bits '1110000000010001))
+(def &'bits?             (&bits '1110000000010010))
+(def &'bits=             (&bits '1110000000010011))
+(def &'identical?        (&bits '1110000000010100))
+(def &'read              (&bits '1110000000010101))
+(def &'unread            (&bits '1110000000010110))
+(def &'append            (&bits '1110000000010111))
+(def &'flush             (&bits '1110000000011000))
+(def &'car               (&bits '1110000000011001))
+(def &'cdr               (&bits '1110000000011010))
+(def &'cons?             (&bits '1110000000011011))
+(def &'meta?             (&bits '1110000000011100))
+(def &'cons              (&bits '1110000000011101))
+(def &'meta              (&bits '1110000000011110))
+(def &'meta!             (&bits '1110000000011111))
+(def &'volatile-cas-cdr! (&bits '1110000000100000))
+(def &'volatile-get-cdr  (&bits '1110000000100001))
+(def &'volatile-set-cdr! (&bits '1110000000100010))
+(def &'throw!            (&bits '1110000000100011))
+
+(def &'seq               (&bits '1110000001000000))
+(def &'first             (&bits '1110000001000001))
+(def &'next              (&bits '1110000001000010))
+(def &'some?             (&bits '1110000001000011))
+(def &'eval*             (&bits '1110000001000100))
+
+(declare &eval)
+
+(defn &seq   [e m] (&eval (&meta &'seq   e) m))
+(defn &first [e m] (&eval (&meta &'first e) m))
+(defn &next  [e m] (&eval (&meta &'next  e) m))
+(defn &some? [e m] (&eval (&meta &'some? e) m))
+(defn &eval* [e m] (&eval (&meta &'eval* e) m))
+
+(declare =)
+(declare apply)
+
+(defn &eval [e m]
+    (if (&meta? e)
+        (let [a (&car e) s (&cdr e)]
+            (cond
+                (&bits= a &'if)         (&eval (if (&eval (&car s) m) (&first (&cdr s) m) (&first (&next (&cdr s) m) m)) m)
+
+                (&bits= a &'seq)
+                    (cond
+                        (&cons? s) s
+                        (&meta? s)
+                            (let [b (&car s)]
+                                (cond
+                                    (&bits= b &'list)    (&seq (&cdr s) m)
+                                    (&bits= b &'closure)
+                                        (let [
+                                            g (&first (&cdr s) m) n (&next (&cdr s) m)
+                                            n
+                                                (let [x (&first g m)]
+                                                    (if (&some? x m) (&cons x (&cons s n)) n)
+                                                )
+                                            n
+                                                (loop [n n p (&seq (&first (&next g m) m) m)]
+                                                    (if (&some? p m)
+                                                        (recur (&cons (&first p m) (&cons nil n)) (&next p m))
+                                                        (let [x (&first (&next (&next g m) m) m)]
+                                                            (if (&some? x m) (&cons x (&cons nil n)) n)
+                                                        )
+                                                    )
+                                                )
+                                        ]
+                                            (&eval (&first (&next (&next (&next g m) m) m) m) n)
+                                        )
+                                )
+                            )
+                    )
+
+                (&bits= a &'first)      (let [s (&seq s m)] (when (&cons? s)       (&car s)))
+                (&bits= a &'next)       (let [s (&seq s m)] (when (&cons? s) (&seq (&cdr s) m)))
+
+                (&bits= a &'some?)      (if (&identical? s nil) false true)
+
+                (&bits= a &'apply)
+                    (let [c (&eval (&car s) m) s (&cdr s)]
+                        (when (&meta? c)
+                            (let [b (&car c)]
+                                (cond
+                                    (&bits= b &'atom)    (&eval (&meta &'apply (&cons (&volatile-get-cdr c) s)) m)
+                                    (&bits= b &'closure)
+                                        (let [
+                                            g (&first (&cdr c) m) n (&next (&cdr c) m)
+                                            n
+                                                (let [x (&first g m)]
+                                                    (if (&some? x m) (&cons x (&cons c n)) n)
+                                                )
+                                            n
+                                                (loop [n n p (&seq (&first (&next g m) m) m) s (&seq s m)]
+                                                    (if (&some? p m)
+                                                        (recur (&cons (&first p m) (&cons (&eval (&first s m) m) n)) (&next p m) (&next s m))
+                                                        (let [x (&first (&next (&next g m) m) m)]
+                                                            (if (&some? x m) (&cons x (&cons (&eval* s m) n)) n)
+                                                        )
+                                                    )
+                                                )
+                                        ]
+                                            (&eval (&first (&next (&next (&next g m) m) m) m) n)
+                                        )
+                                )
+                            )
+                        )
+                    )
+                (&bits= a &'fn)         (&meta &'closure (&cons s m))
+
+                (&bits= a &'eval*)
+                    (when (&some? s m)
+                        (&cons (&eval (&first s m) m) (&eval* (&next s m) m))
+                    )
+
+                (&bits= a &'quote)      (&car s)
+                (&bits= a &'binding)
+                    (when (&some? m m)
+                        (if (= (&car m) (&car s))
+                            (&car (&cdr m))
+                            (&eval e (&cdr (&cdr m)))
+                        )
+                    )
+
+                (&bits= a &'var-get)    (&volatile-get-cdr (&car s))
+                (&bits= a &'var-set!)   (&do (&volatile-set-cdr! (&car s) (&eval (&first (&cdr s) m) m)) nil)
+
+                (&bits= a &'do)
+                    (let [x (&eval (&first s m) m) s (&next s m)]
+                        (if (&some? s m)
+                            (&eval (&meta &'do s) m)
+                            x
+                        )
+                    )
+
+                (&bits= a &'bits)       (&bits (apply -/-str (&eval (&first s m) m)))
+                (&bits= a &'bits?)      (&bits? (&eval (&first s m) m))
+                (&bits= a &'bits=)      (&bits= (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+
+                (&bits= a &'identical?) (&identical? (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+
+                (&bits= a &'read)       (&read (&eval (&first s m) m))
+                (&bits= a &'unread)     (&unread (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'append)     (&append (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'flush)      (&flush (&eval (&first s m) m))
+
+                (&bits= a &'car)        (&car (&eval (&first s m) m))
+                (&bits= a &'cdr)        (&cdr (&eval (&first s m) m))
+
+                (&bits= a &'cons?)      (&cons? (&eval (&first s m) m))
+                (&bits= a &'meta?)      (&meta? (&eval (&first s m) m))
+
+                (&bits= a &'cons)       (&cons (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'meta)       (&meta (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'meta!)      (&meta! (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+
+                (&bits= a &'volatile-cas-cdr!) (&volatile-cas-cdr! (&eval (&first s m) m) (&eval (&first (&next s m) m) m) (&eval (&first (&next (&next s m) m) m) m))
+                (&bits= a &'volatile-get-cdr)  (&volatile-get-cdr (&eval (&first s m) m))
+                (&bits= a &'volatile-set-cdr!) (&volatile-set-cdr! (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+
+                (&bits= a &'throw!)     (&throw! "oops!")
+                'else                   e
+            )
+        )
+        e
+    )
+)
 
 (defn identical? [x y] (&identical? x y))
 
@@ -172,23 +338,13 @@
 
 (defn reduce-kv [f r kvs] (let [kvs (seq kvs)] (if (some? kvs) (#_recur reduce-kv f (f r (first kvs) (second kvs)) (next (next kvs))) r)))
 
-(def &'list    (&bits '1110000000000000))
-(def &'string  (&bits '1110000000000001))
-(def &'symbol  (&bits '1110000000000010))
-(def &'closure (&bits '1110000000000011))
-(def &'atom    (&bits '1110000000000100))
-
 (defn Atom'new [init] (&meta! &'atom init))
-
-(declare =)
 
 (defn atom? [x] (and (&meta? x) (= (&car x) &'atom)))
 
 (defn Atom''deref [this]
     (&volatile-get-cdr this)
 )
-
-(declare apply)
 
 (defn Atom''swap! [this, f, s]
     (loop []
@@ -519,8 +675,6 @@
 (defn Closure''fun [this] (first (&cdr this)))
 (defn Closure''env [this] (next  (&cdr this)))
 
-(declare &eval)
-
 (defn Closure''apply [this, args]
     (let [
         fun (Closure''fun this) env (Closure''env this)
@@ -747,14 +901,6 @@
 (defn prn     [& s] (apply pr    s) (newline) (flush) nil)
 (defn println [& s] (apply print s) (newline) (flush) nil)
 
-(def &'if       (&bits '1110000000001000))
-(def &'apply    (&bits '1110000000001001))
-(def &'fn       (&bits '1110000000001010))
-(def &'quote    (&bits '1110000000001011))
-(def &'binding  (&bits '1110000000001100))
-(def &'var-get  (&bits '1110000000001101))
-(def &'var-set! (&bits '1110000000001110))
-
 (defn QuoteExpr'create [form]
     (if (or (nil? form) (true? form) (false? form))
         form
@@ -785,27 +931,6 @@
         (&meta &'if (cons* test then else))
     )
 )
-
-(def &'do                (&bits '1110000000010000))
-(def &'bits              (&bits '1110000000010001))
-(def &'bits?             (&bits '1110000000010010))
-(def &'bits=             (&bits '1110000000010011))
-(def &'identical?        (&bits '1110000000010100))
-(def &'read              (&bits '1110000000010101))
-(def &'unread            (&bits '1110000000010110))
-(def &'append            (&bits '1110000000010111))
-(def &'flush             (&bits '1110000000011000))
-(def &'car               (&bits '1110000000011001))
-(def &'cdr               (&bits '1110000000011010))
-(def &'cons?             (&bits '1110000000011011))
-(def &'meta?             (&bits '1110000000011100))
-(def &'cons              (&bits '1110000000011101))
-(def &'meta              (&bits '1110000000011110))
-(def &'meta!             (&bits '1110000000011111))
-(def &'volatile-cas-cdr! (&bits '1110000000100000))
-(def &'volatile-get-cdr  (&bits '1110000000100001))
-(def &'volatile-set-cdr! (&bits '1110000000100010))
-(def &'throw!            (&bits '1110000000100011))
 
 (defn ApplyExpr'embed [e]
     (cond
@@ -976,136 +1101,6 @@
 )
 
 (defn eval [form] (&eval (Compiler'analyze form, nil) nil))
-
-(def &''seq     (&bits '1110000001000000))
-(def &''eval*   (&bits '1110000001000001))
-
-(defn &eval [e m]
-    (if (&meta? e)
-        (let [a (&car e) s (&cdr e)]
-            (cond
-                (&bits= a &'if)         (&eval (if (&eval (&car s) m) (first (&cdr s)) (first (next (&cdr s)))) m)
-
-                (&bits= a &''seq)
-                    (cond
-                        (&cons? s) s
-                        (&meta? s)
-                            (let [b (&car s)]
-                                (cond
-                                    (&bits= b &'list)    (&eval (&meta a (&cdr s)) m)
-                                    (&bits= b &'closure)
-                                        (let [
-                                            g (first (&cdr s)) n (next (&cdr s))
-                                            n
-                                                (let [x (first g)]
-                                                    (if (some? x) (&cons x (&cons s n)) n)
-                                                )
-                                            n
-                                                (loop [n n p (&eval (&meta &''seq (first (next g))) m)]
-                                                    (if (some? p)
-                                                        (recur (&cons (first p) (&cons nil n)) (next p))
-                                                        n
-                                                    )
-                                                )
-                                            n
-                                                (let [x (first (next (next g)))]
-                                                    (if (some? x) (&cons x (&cons nil n)) n)
-                                                )
-                                        ]
-                                            (&eval (first (next (next (next g)))) n)
-                                        )
-                                )
-                            )
-                    )
-
-                (&bits= a &'apply)
-                    (let [c (&eval (&car s) m) s (&cdr s)]
-                        (when (&meta? c)
-                            (let [b (&car c)]
-                                (cond
-                                    (&bits= b &'atom)    (&eval (&meta a (&cons (&volatile-get-cdr c) s)) m)
-                                    (&bits= b &'closure)
-                                        (let [
-                                            g (first (&cdr c)) n (next (&cdr c))
-                                            n
-                                                (let [x (first g)]
-                                                    (if (some? x) (&cons x (&cons c n)) n)
-                                                )
-                                            n
-                                                (loop [n n p (&eval (&meta &''seq (first (next g))) m) s (&eval (&meta &''seq s) m)]
-                                                    (if (some? p)
-                                                        (recur (&cons (first p) (&cons (&eval (first s) m) n)) (next p) (next s))
-                                                        (let [x (first (next (next g)))]
-                                                            (if (some? x) (&cons x (&cons (&eval (&meta &''eval* s) m) n)) n)
-                                                        )
-                                                    )
-                                                )
-                                        ]
-                                            (&eval (first (next (next (next g)))) n)
-                                        )
-                                )
-                            )
-                        )
-                    )
-                (&bits= a &'fn)         (&meta &'closure (&cons s m))
-
-                (&bits= a &''eval*)
-                    (when (some? s)
-                        (&cons (&eval (first s) m) (&eval (&meta a (next s)) m))
-                    )
-
-                (&bits= a &'quote)      (&car s)
-                (&bits= a &'binding)
-                    (when (some? m)
-                        (if (= (&car m) (&car s))
-                            (&car (&cdr m))
-                            (&eval e (&cdr (&cdr m)))
-                        )
-                    )
-
-                (&bits= a &'var-get)    (&volatile-get-cdr (&car s))
-                (&bits= a &'var-set!)   (&do (&volatile-set-cdr! (&car s) (&eval (first (&cdr s)) m)) nil)
-
-                (&bits= a &'do)
-                    (let [x (&eval (first s) m) s (next s)]
-                        (if (some? s)
-                            (&eval (&meta a s) m)
-                            x
-                        )
-                    )
-
-                (&bits= a &'bits)       (&bits (apply -/-str (&eval (first s) m)))
-                (&bits= a &'bits?)      (&bits? (&eval (first s) m))
-                (&bits= a &'bits=)      (&bits= (&eval (first s) m) (&eval (first (next s)) m))
-
-                (&bits= a &'identical?) (&identical? (&eval (first s) m) (&eval (first (next s)) m))
-
-                (&bits= a &'read)       (&read (&eval (first s) m))
-                (&bits= a &'unread)     (&unread (&eval (first s) m) (&eval (first (next s)) m))
-                (&bits= a &'append)     (&append (&eval (first s) m) (&eval (first (next s)) m))
-                (&bits= a &'flush)      (&flush (&eval (first s) m))
-
-                (&bits= a &'car)        (&car (&eval (first s) m))
-                (&bits= a &'cdr)        (&cdr (&eval (first s) m))
-
-                (&bits= a &'cons?)      (&cons? (&eval (first s) m))
-                (&bits= a &'meta?)      (&meta? (&eval (first s) m))
-
-                (&bits= a &'cons)       (&cons (&eval (first s) m) (&eval (first (next s)) m))
-                (&bits= a &'meta)       (&meta (&eval (first s) m) (&eval (first (next s)) m))
-                (&bits= a &'meta!)      (&meta! (&eval (first s) m) (&eval (first (next s)) m))
-
-                (&bits= a &'volatile-cas-cdr!) (&volatile-cas-cdr! (&eval (first s) m) (&eval (first (next s)) m) (&eval (first (next (next s))) m))
-                (&bits= a &'volatile-get-cdr)  (&volatile-get-cdr (&eval (first s) m))
-                (&bits= a &'volatile-set-cdr!) (&volatile-set-cdr! (&eval (first s) m) (&eval (first (next s)) m))
-
-                (&bits= a &'throw!)     (apply &throw! (map (fn [%] (apply -/-str %)) (map (fn [%] (&eval % m)) s)))
-                'else                   e
-            )
-        )
-        e
-    )
-)
 
 (declare Reader'macro)
 
