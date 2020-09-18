@@ -21,6 +21,12 @@
 (def  &bits?     char?)
 (def  &bits=     =)
 
+(defn &zero  []       (char 0))
+(defn &zero? [x] (= x (char 0)))
+
+(defn &inc [x] (char (+ (long x) 1)))
+(defn &dec [x] (char (- (long x) 1)))
+
 (defn &read   [_]   (let [x (.read *in*)] (when (not (neg? x)) (char x))))
 (defn &unread [_ c] (.unread *in*, (int c)))
 (defn &append [_ x] (.append *out*, x) _)
@@ -44,19 +50,19 @@
 (defn -var-find [s] (.findInternedVar (the-ns 'waltraud.core), (symbol s)))
 (defn -var-get  [v] (.get v))
 
-(def Waltraud'ram (long-array 16777216))
+(def Waltraud'ram (long-array (+ 16777216 16777216 16777216)))
 (def Waltraud'gc (atom (alength Waltraud'ram)))
 
 (defn &anew [n] (let [a (swap! Waltraud'gc - n)] (if (neg? a) (&throw! "ram non più at " a) a)))
 
 (defn &aget [a i]
     (let [x (aget Waltraud'ram (+ a i))]
-        (case x -1 nil -2 false -3 true (if (neg? x) (char (- 0 x 1)) x))
+        (case x -65537 nil -65538 false -65539 true (if (neg? x) (char (- 0 x 1)) x))
     )
 )
 
 (defn &aset [a i x]
-    (let [x (cond (nil? x) -1 (false? x) -2 (true? x) -3 (char? x) (- 0 (long x) 1) 'else x)]
+    (let [x (cond (nil? x) -65537 (false? x) -65538 (true? x) -65539 (char? x) (- 0 (long x) 1) 'else x)]
         (aset Waltraud'ram (+ a i) x)
     )
 )
@@ -82,7 +88,7 @@
     (:require [waltraud.bore :as -])
 )
 
-(-/refer! waltraud.bore [and &append &bits &bits? &bits= &car &cdr cond &cons &cons? declare defn &flush fn &identical? let loop &meta &meta! &meta? or &read &throw! &unread &volatile-cas-cdr! &volatile-get-cdr &volatile-set-cdr! when])
+(-/refer! waltraud.bore [and &append &bits &bits? &bits= &car &cdr cond &cons &cons? &dec declare defn &flush fn &identical? &inc let loop &meta &meta! &meta? or &read &throw! &unread &volatile-cas-cdr! &volatile-get-cdr &volatile-set-cdr! when &zero &zero?])
 
 (defn -eager! [s] (if (-/-fn? s) (-/-apply s nil) s))
 
@@ -107,22 +113,26 @@
 (def &'bits              (&bits '1110000000010001))
 (def &'bits?             (&bits '1110000000010010))
 (def &'bits=             (&bits '1110000000010011))
-(def &'identical?        (&bits '1110000000010100))
-(def &'read              (&bits '1110000000010101))
-(def &'unread            (&bits '1110000000010110))
-(def &'append            (&bits '1110000000010111))
-(def &'flush             (&bits '1110000000011000))
-(def &'car               (&bits '1110000000011001))
-(def &'cdr               (&bits '1110000000011010))
-(def &'cons?             (&bits '1110000000011011))
-(def &'meta?             (&bits '1110000000011100))
-(def &'cons              (&bits '1110000000011101))
-(def &'meta              (&bits '1110000000011110))
-(def &'meta!             (&bits '1110000000011111))
-(def &'volatile-cas-cdr! (&bits '1110000000100000))
-(def &'volatile-get-cdr  (&bits '1110000000100001))
-(def &'volatile-set-cdr! (&bits '1110000000100010))
-(def &'throw!            (&bits '1110000000100011))
+(def &'zero              (&bits '1110000000010100))
+(def &'zero?             (&bits '1110000000010101))
+(def &'inc               (&bits '1110000000010110))
+(def &'dec               (&bits '1110000000010111))
+(def &'identical?        (&bits '1110000000011000))
+(def &'read              (&bits '1110000000011001))
+(def &'unread            (&bits '1110000000011010))
+(def &'append            (&bits '1110000000011011))
+(def &'flush             (&bits '1110000000011100))
+(def &'car               (&bits '1110000000011101))
+(def &'cdr               (&bits '1110000000011110))
+(def &'cons?             (&bits '1110000000011111))
+(def &'meta?             (&bits '1110000000100000))
+(def &'cons              (&bits '1110000000100001))
+(def &'meta              (&bits '1110000000100010))
+(def &'meta!             (&bits '1110000000100011))
+(def &'volatile-cas-cdr! (&bits '1110000000100100))
+(def &'volatile-get-cdr  (&bits '1110000000100101))
+(def &'volatile-set-cdr! (&bits '1110000000100110))
+(def &'throw!            (&bits '1110000000100111))
 
 (def &'seq               (&bits '1110000001000000))
 (def &'first             (&bits '1110000001000001))
@@ -138,6 +148,10 @@
 (defn &some? [e m] (&eval (&meta &'some? e) m))
 (defn &eval* [e m] (&eval (&meta &'eval* e) m))
 
+(defn &second [e m] (&first (&next e m) m))
+(defn &third  [e m] (&first (&next (&next e m) m) m))
+(defn &fourth [e m] (&first (&next (&next (&next e m) m) m) m))
+
 (declare =)
 (declare apply)
 
@@ -145,7 +159,7 @@
     (if (&meta? e)
         (let [a (&car e) s (&cdr e)]
             (cond
-                (&bits= a &'if)         (&eval (if (&eval (&car s) m) (&first (&cdr s) m) (&first (&next (&cdr s) m) m)) m)
+                (&bits= a &'if)         (&eval (if (&eval (&car s) m) (&first (&cdr s) m) (&second (&cdr s) m)) m)
 
                 (&bits= a &'seq)
                     (cond
@@ -158,20 +172,14 @@
                                         (let [
                                             g (&first (&cdr s) m) n (&next (&cdr s) m)
                                             n
-                                                (let [x (&first g m)]
-                                                    (if (&some? x m) (&cons x (&cons s n)) n)
-                                                )
-                                            n
-                                                (loop [n n p (&seq (&first (&next g m) m) m)]
-                                                    (if (&some? p m)
-                                                        (recur (&cons (&first p m) (&cons nil n)) (&next p m))
-                                                        (let [x (&first (&next (&next g m) m) m)]
-                                                            (if (&some? x m) (&cons x (&cons nil n)) n)
-                                                        )
+                                                (loop [n (if (&first g m) (&cons s n) n) p (&second g m)]
+                                                    (if (&zero? p)
+                                                        (if (&third g m) (&cons nil n) n)
+                                                        (recur (&cons nil n) (&dec p))
                                                     )
                                                 )
                                         ]
-                                            (&eval (&first (&next (&next (&next g m) m) m) m) n)
+                                            (&eval (&fourth g m) n)
                                         )
                                 )
                             )
@@ -192,20 +200,14 @@
                                         (let [
                                             g (&first (&cdr c) m) n (&next (&cdr c) m)
                                             n
-                                                (let [x (&first g m)]
-                                                    (if (&some? x m) (&cons x (&cons c n)) n)
-                                                )
-                                            n
-                                                (loop [n n p (&seq (&first (&next g m) m) m) s (&seq s m)]
-                                                    (if (&some? p m)
-                                                        (recur (&cons (&first p m) (&cons (&eval (&first s m) m) n)) (&next p m) (&next s m))
-                                                        (let [x (&first (&next (&next g m) m) m)]
-                                                            (if (&some? x m) (&cons x (&cons (&eval* s m) n)) n)
-                                                        )
+                                                (loop [n (if (&first g m) (&cons c n) n) p (&second g m) s (&seq s m)]
+                                                    (if (&zero? p)
+                                                        (if (&third g m) (&cons (&eval* s m) n) n)
+                                                        (recur (&cons (&eval (&first s m) m) n) (&dec p) (&next s m))
                                                     )
                                                 )
                                         ]
-                                            (&eval (&first (&next (&next (&next g m) m) m) m) n)
+                                            (&eval (&fourth g m) n)
                                         )
                                 )
                             )
@@ -220,10 +222,12 @@
 
                 (&bits= a &'quote)      (&car s)
                 (&bits= a &'binding)
-                    (when (&some? m m)
-                        (if (= (&car m) (&car s))
-                            (&car (&cdr m))
-                            (&eval e (&cdr (&cdr m)))
+                    (let [i (&car s)]
+                        (when (&some? m m)
+                            (if (&zero? i)
+                                (&car m)
+                                (&eval (&meta &'binding (&cons (&dec i) nil)) (&cdr m))
+                            )
                         )
                     )
 
@@ -240,13 +244,19 @@
 
                 (&bits= a &'bits)       (&bits (apply -/-str (&eval (&first s m) m)))
                 (&bits= a &'bits?)      (&bits? (&eval (&first s m) m))
-                (&bits= a &'bits=)      (&bits= (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'bits=)      (&bits= (&eval (&first s m) m) (&eval (&second s m) m))
 
-                (&bits= a &'identical?) (&identical? (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'zero)       (&zero)
+                (&bits= a &'zero?)      (&zero? (&eval (&first s m) m))
+
+                (&bits= a &'inc)        (&inc (&eval (&first s m) m))
+                (&bits= a &'dec)        (&dec (&eval (&first s m) m))
+
+                (&bits= a &'identical?) (&identical? (&eval (&first s m) m) (&eval (&second s m) m))
 
                 (&bits= a &'read)       (&read (&eval (&first s m) m))
-                (&bits= a &'unread)     (&unread (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
-                (&bits= a &'append)     (&append (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'unread)     (&unread (&eval (&first s m) m) (&eval (&second s m) m))
+                (&bits= a &'append)     (&append (&eval (&first s m) m) (&eval (&second s m) m))
                 (&bits= a &'flush)      (&flush (&eval (&first s m) m))
 
                 (&bits= a &'car)        (&car (&eval (&first s m) m))
@@ -255,13 +265,13 @@
                 (&bits= a &'cons?)      (&cons? (&eval (&first s m) m))
                 (&bits= a &'meta?)      (&meta? (&eval (&first s m) m))
 
-                (&bits= a &'cons)       (&cons (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
-                (&bits= a &'meta)       (&meta (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
-                (&bits= a &'meta!)      (&meta! (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'cons)       (&cons (&eval (&first s m) m) (&eval (&second s m) m))
+                (&bits= a &'meta)       (&meta (&eval (&first s m) m) (&eval (&second s m) m))
+                (&bits= a &'meta!)      (&meta! (&eval (&first s m) m) (&eval (&second s m) m))
 
-                (&bits= a &'volatile-cas-cdr!) (&volatile-cas-cdr! (&eval (&first s m) m) (&eval (&first (&next s m) m) m) (&eval (&first (&next (&next s m) m) m) m))
+                (&bits= a &'volatile-cas-cdr!) (&volatile-cas-cdr! (&eval (&first s m) m) (&eval (&second s m) m) (&eval (&third s m) m))
                 (&bits= a &'volatile-get-cdr)  (&volatile-get-cdr (&eval (&first s m) m))
-                (&bits= a &'volatile-set-cdr!) (&volatile-set-cdr! (&eval (&first s m) m) (&eval (&first (&next s m) m) m))
+                (&bits= a &'volatile-set-cdr!) (&volatile-set-cdr! (&eval (&first s m) m) (&eval (&second s m) m))
 
                 (&bits= a &'throw!)     (&throw! "oops!")
                 'else                   e
@@ -679,16 +689,10 @@
     (let [
         fun (Closure''fun this) env (Closure''env this)
         env
-            (let [x (first fun)]
-                (if (some? x) (assoc env x this) env)
-            )
-        env
-            (loop [env env pars (seq (second fun)) args (seq args)]
-                (if (some? pars)
-                    (recur (assoc env (first pars) (first args)) (next pars) (next args))
-                    (let [x (third fun)]
-                        (if (some? x) (assoc env x args) env)
-                    )
+            (loop [env (if (first fun) (cons this env) env) pars (second fun) args (seq args)]
+                (if (&zero? pars)
+                    (if (third fun) (cons args env) env)
+                    (recur (cons (first args) env) (&dec pars) (next args))
                 )
             )
     ]
@@ -940,6 +944,12 @@
         (= e '&bits?)      &'bits?
         (= e '&bits=)      &'bits=
 
+        (= e '&zero)       &'zero
+        (= e '&zero?)      &'zero?
+
+        (= e '&inc)        &'inc
+        (= e '&dec)        &'dec
+
         (= e '&identical?) &'identical?
 
         (= e '&read)       &'read
@@ -1022,7 +1032,18 @@
             )
         body (ApplyExpr'parse (cons (! '&do) (next form)), scope)
     ]
-        (&meta &'fn (cons* self pars etal body))
+        (&meta &'fn (cons* (some? self) (loop [n (&zero) s (seq pars)] (if (some? s) (recur (&inc n) (next s)) n)) (some? etal) body))
+    )
+)
+
+(defn Scope'index-of [scope, name]
+    (loop [i (&zero) s (seq scope)]
+        (when (some? s)
+            (if (= (first s) name)
+                i
+                (recur (&inc i) (next s))
+            )
+        )
     )
 )
 
@@ -1085,8 +1106,10 @@
             )
         (symbol? form)
             (or
-                (when (some (fn [%] (= % form)) scope)
-                    (&meta &'binding (cons* form))
+                (let [i (Scope'index-of scope, form)]
+                    (when (some? i)
+                        (&meta &'binding (cons* i))
+                    )
                 )
                 (let [v (Var'find form)]
                     (when (some? v)
