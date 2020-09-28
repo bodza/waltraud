@@ -137,29 +137,29 @@
 (def &'seq               (&bits '1110000001000000))
 (def &'first             (&bits '1110000001000001))
 (def &'next              (&bits '1110000001000010))
-(def &'some?             (&bits '1110000001000011))
-(def &'eval*             (&bits '1110000001000100))
+(def &'eval*             (&bits '1110000001000011))
 
 (declare &eval)
 
-(defn &seq   [e m] (&eval (&meta &'seq   e) m))
-(defn &first [e m] (&eval (&meta &'first e) m))
-(defn &next  [e m] (&eval (&meta &'next  e) m))
-(defn &some? [e m] (&eval (&meta &'some? e) m))
+(defn &seq   [s] (&eval (&meta &'seq   s) nil))
+(defn &first [s] (&eval (&meta &'first s) nil))
+(defn &next  [s] (&eval (&meta &'next  s) nil))
+
 (defn &eval* [e m] (&eval (&meta &'eval* e) m))
 
-(defn &second [e m] (&first (&next e m) m))
-(defn &third  [e m] (&first (&next (&next e m) m) m))
-(defn &fourth [e m] (&first (&next (&next (&next e m) m) m) m))
+(defn &second [s] (&first (&next s)))
+(defn &third  [s] (&first (&next (&next s))))
+(defn &fourth [s] (&first (&next (&next (&next s)))))
 
-(declare =)
+(defn &some? [x] (if (&identical? x nil) false true))
+
 (declare apply)
 
 (defn &eval [e m]
     (if (&meta? e)
         (let [a (&car e) s (&cdr e)]
             (cond
-                (&bits= a &'if)         (&eval (if (&eval (&car s) m) (&first (&cdr s) m) (&second (&cdr s) m)) m)
+                (&bits= a &'if)         (let [x (&eval (&car s) m) y (&first (&cdr s)) z (&second (&cdr s))] (&eval (if x y z) m))
 
                 (&bits= a &'seq)
                     (cond
@@ -167,28 +167,26 @@
                         (&meta? s)
                             (let [b (&car s)]
                                 (cond
-                                    (&bits= b &'list)    (&seq (&cdr s) m)
+                                    (&bits= b &'list)    (&seq (&cdr s))
                                     (&bits= b &'closure)
                                         (let [
-                                            g (&first (&cdr s) m) n (&next (&cdr s) m)
+                                            g (&first (&cdr s)) n (&next (&cdr s))
                                             n
-                                                (loop [n (if (&first g m) (&cons s n) n) p (&second g m)]
+                                                (loop [n (if (&first g) (&cons s n) n) p (&second g)]
                                                     (if (&zero? p)
-                                                        (if (&third g m) (&cons nil n) n)
+                                                        (if (&third g) (&cons nil n) n)
                                                         (recur (&cons nil n) (&dec p))
                                                     )
                                                 )
                                         ]
-                                            (&eval (&fourth g m) n)
+                                            (&eval (&fourth g) n)
                                         )
                                 )
                             )
                     )
 
-                (&bits= a &'first)      (let [s (&seq s m)] (when (&cons? s)       (&car s)))
-                (&bits= a &'next)       (let [s (&seq s m)] (when (&cons? s) (&seq (&cdr s) m)))
-
-                (&bits= a &'some?)      (if (&identical? s nil) false true)
+                (&bits= a &'first)      (let [s (&seq s)] (when (&cons? s)       (&car s)))
+                (&bits= a &'next)       (let [s (&seq s)] (when (&cons? s) (&seq (&cdr s))))
 
                 (&bits= a &'apply)
                     (let [c (&eval (&car s) m) s (&cdr s)]
@@ -198,16 +196,16 @@
                                     (&bits= b &'atom)    (&eval (&meta &'apply (&cons (&volatile-get-cdr c) s)) m)
                                     (&bits= b &'closure)
                                         (let [
-                                            g (&first (&cdr c) m) n (&next (&cdr c) m)
+                                            g (&first (&cdr c)) n (&next (&cdr c))
                                             n
-                                                (loop [n (if (&first g m) (&cons c n) n) p (&second g m) s (&seq s m)]
+                                                (loop [n (if (&first g) (&cons c n) n) p (&second g) s (&seq s)]
                                                     (if (&zero? p)
-                                                        (if (&third g m) (&cons (&eval* s m) n) n)
-                                                        (recur (&cons (&eval (&first s m) m) n) (&dec p) (&next s m))
+                                                        (if (&third g) (&cons (&eval* s m) n) n)
+                                                        (let [x (&eval (&first s) m)] (recur (&cons x n) (&dec p) (&next s)))
                                                     )
                                                 )
                                         ]
-                                            (&eval (&fourth g m) n)
+                                            (&eval (&fourth g) n)
                                         )
                                 )
                             )
@@ -216,14 +214,14 @@
                 (&bits= a &'fn)         (&meta &'closure (&cons s m))
 
                 (&bits= a &'eval*)
-                    (when (&some? s m)
-                        (&cons (&eval (&first s m) m) (&eval* (&next s m) m))
+                    (when (&some? s)
+                        (let [x (&eval (&first s) m)] (&cons x (&eval* (&next s) m)))
                     )
 
                 (&bits= a &'quote)      (&car s)
                 (&bits= a &'binding)
                     (let [i (&car s)]
-                        (when (&some? m m)
+                        (when (&some? m)
                             (if (&zero? i)
                                 (&car m)
                                 (&eval (&meta &'binding (&cons (&dec i) nil)) (&cdr m))
@@ -232,46 +230,46 @@
                     )
 
                 (&bits= a &'var-get)    (&volatile-get-cdr (&car s))
-                (&bits= a &'var-set!)   (&do (&volatile-set-cdr! (&car s) (&eval (&first (&cdr s) m) m)) nil)
+                (&bits= a &'var-set!)   (let [x (&eval (&first (&cdr s)) m) _ (&volatile-set-cdr! (&car s) x)] nil)
 
                 (&bits= a &'do)
-                    (let [x (&eval (&first s m) m) s (&next s m)]
-                        (if (&some? s m)
+                    (let [x (&eval (&first s) m) s (&next s)]
+                        (if (&some? s)
                             (&eval (&meta &'do s) m)
                             x
                         )
                     )
 
-                (&bits= a &'bits)       (&bits (apply -/-str (&eval (&first s m) m)))
-                (&bits= a &'bits?)      (&bits? (&eval (&first s m) m))
-                (&bits= a &'bits=)      (&bits= (&eval (&first s m) m) (&eval (&second s m) m))
+                (&bits= a &'bits)       (let [x (&eval (&first s) m)]                         (&bits (apply -/-str x)))
+                (&bits= a &'bits?)      (let [x (&eval (&first s) m)]                         (&bits? x))
+                (&bits= a &'bits=)      (let [x (&eval (&first s) m) y (&eval (&second s) m)] (&bits= x y))
 
                 (&bits= a &'zero)       (&zero)
-                (&bits= a &'zero?)      (&zero? (&eval (&first s m) m))
+                (&bits= a &'zero?)      (let [x (&eval (&first s) m)]                         (&zero? x))
 
-                (&bits= a &'inc)        (&inc (&eval (&first s m) m))
-                (&bits= a &'dec)        (&dec (&eval (&first s m) m))
+                (&bits= a &'inc)        (let [x (&eval (&first s) m)]                         (&inc x))
+                (&bits= a &'dec)        (let [x (&eval (&first s) m)]                         (&dec x))
 
-                (&bits= a &'identical?) (&identical? (&eval (&first s m) m) (&eval (&second s m) m))
+                (&bits= a &'identical?) (let [x (&eval (&first s) m) y (&eval (&second s) m)] (&identical? x y))
 
-                (&bits= a &'read)       (&read (&eval (&first s m) m))
-                (&bits= a &'unread)     (&unread (&eval (&first s m) m) (&eval (&second s m) m))
-                (&bits= a &'append)     (&append (&eval (&first s m) m) (&eval (&second s m) m))
-                (&bits= a &'flush)      (&flush (&eval (&first s m) m))
+                (&bits= a &'read)       (let [x (&eval (&first s) m)]                         (&read x))
+                (&bits= a &'unread)     (let [x (&eval (&first s) m) y (&eval (&second s) m)] (&unread x y))
+                (&bits= a &'append)     (let [x (&eval (&first s) m) y (&eval (&second s) m)] (&append x y))
+                (&bits= a &'flush)      (let [x (&eval (&first s) m)]                         (&flush x))
 
-                (&bits= a &'car)        (&car (&eval (&first s m) m))
-                (&bits= a &'cdr)        (&cdr (&eval (&first s m) m))
+                (&bits= a &'car)        (let [x (&eval (&first s) m)]                         (&car x))
+                (&bits= a &'cdr)        (let [x (&eval (&first s) m)]                         (&cdr x))
 
-                (&bits= a &'cons?)      (&cons? (&eval (&first s m) m))
-                (&bits= a &'meta?)      (&meta? (&eval (&first s m) m))
+                (&bits= a &'cons?)      (let [x (&eval (&first s) m)]                         (&cons? x))
+                (&bits= a &'meta?)      (let [x (&eval (&first s) m)]                         (&meta? x))
 
-                (&bits= a &'cons)       (&cons (&eval (&first s m) m) (&eval (&second s m) m))
-                (&bits= a &'meta)       (&meta (&eval (&first s m) m) (&eval (&second s m) m))
-                (&bits= a &'meta!)      (&meta! (&eval (&first s m) m) (&eval (&second s m) m))
+                (&bits= a &'cons)       (let [x (&eval (&first s) m) y (&eval (&second s) m)] (&cons x y))
+                (&bits= a &'meta)       (let [x (&eval (&first s) m) y (&eval (&second s) m)] (&meta x y))
+                (&bits= a &'meta!)      (let [x (&eval (&first s) m) y (&eval (&second s) m)] (&meta! x y))
 
-                (&bits= a &'volatile-cas-cdr!) (&volatile-cas-cdr! (&eval (&first s m) m) (&eval (&second s m) m) (&eval (&third s m) m))
-                (&bits= a &'volatile-get-cdr)  (&volatile-get-cdr (&eval (&first s m) m))
-                (&bits= a &'volatile-set-cdr!) (&volatile-set-cdr! (&eval (&first s m) m) (&eval (&second s m) m))
+                (&bits= a &'volatile-cas-cdr!) (let [x (&eval (&first s) m) y (&eval (&second s) m) z (&eval (&third s) m)] (&volatile-cas-cdr! x y z))
+                (&bits= a &'volatile-get-cdr)  (let [x (&eval (&first s) m)]                                                (&volatile-get-cdr x))
+                (&bits= a &'volatile-set-cdr!) (let [x (&eval (&first s) m) y (&eval (&second s) m)]                        (&volatile-set-cdr! x y))
 
                 (&bits= a &'throw!)     (&throw! "oops!")
                 'else                   e
@@ -350,7 +348,7 @@
 
 (defn Atom'new [init] (&meta! &'atom init))
 
-(defn atom? [x] (and (&meta? x) (= (&car x) &'atom)))
+(defn atom? [x] (and (&meta? x) (&bits= (&car x) &'atom)))
 
 (defn Atom''deref [this]
     (&volatile-get-cdr this)
@@ -403,7 +401,7 @@
 
 (defn List'new [s] (&meta &'list s))
 
-(defn list? [x] (and (&meta? x) (= (&car x) &'list)))
+(defn list? [x] (and (&meta? x) (&bits= (&car x) &'list)))
 
 (defn List''seq [this] (seq (&cdr this)))
 
@@ -456,6 +454,8 @@
 (defn ConsMap'new [car, cadr, cddr]
     (cons car (cons cadr cddr))
 )
+
+(declare =)
 
 (defn ConsMap''find [this, key]
     (some-kv (fn [e] (when (= (first e) key) e)) this)
@@ -558,7 +558,7 @@
 
 (def String'new (memoize1 (fn [s] (&meta &'string s))))
 
-(defn string? [x] (and (&meta? x) (= (&car x) &'string)))
+(defn string? [x] (and (&meta? x) (&bits= (&car x) &'string)))
 
 (defn String''seq [this] (seq (&cdr this)))
 
@@ -572,7 +572,7 @@
 
 (def Symbol'new (memoize1 (fn [s] (&meta &'symbol s))))
 
-(defn symbol? [x] (and (&meta? x) (= (&car x) &'symbol)))
+(defn symbol? [x] (and (&meta? x) (&bits= (&car x) &'symbol)))
 
 (defn Symbol''seq [this] (seq (&cdr this)))
 
@@ -680,7 +680,7 @@
 
 (defn Closure'new [fun, env] (&meta &'closure (cons fun env)))
 
-(defn closure? [x] (and (&meta? x) (= (&car x) &'closure)))
+(defn closure? [x] (and (&meta? x) (&bits= (&car x) &'closure)))
 
 (defn Closure''fun [this] (first (&cdr this)))
 (defn Closure''env [this] (next  (&cdr this)))
